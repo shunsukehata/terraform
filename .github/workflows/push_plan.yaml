@@ -54,7 +54,7 @@ jobs:
       # .tfファイルの差分がある場合のみ実行
       - name: Run Terraform Checks and Plan
         id: tf_steps # 各ステップの結果をまとめて参照するためのID
-        if: steps.check_files.outputs.tf_changed == 'true' # 差分がある場合のみ実行
+        if: steps.check_files.outputs.tf_changed == 'true'
         working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
         run: |
           # fmt, init, validate は失敗しても Plan を実行するために || true を追加
@@ -78,7 +78,8 @@ jobs:
             echo "EOF" >> $GITHUB_ENV
           fi
 
-      # PRコメントに結果を投稿・更新 (この部分は前回の修正から変更なし)
+      # PRコメントに結果を投稿・更新
+
       - name: Add Terraform Checks and Plan comment to PR
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
@@ -100,11 +101,10 @@ jobs:
                 // plan 実行結果が「No changes」だった場合
                 planSectionContent = `\nNo changes. Your infrastructure matches the configuration.\n`;
             } else if (planOutput) {
-                // Plan結果がある場合、diff形式で表示 (エスケープシーケンスは -no-color で除去済み)
-                // ただし diff ブロックの色付けは GitHub のレンダリングに依存します
+                // Plan結果がある場合、diff形式で表示
                 planSectionContent = `\n\`\`\`diff\n${planOutput}\n\`\`\`\n`;
             } else {
-                // Plan出力が得られなかった場合 (例: Plan実行ステップが失敗など)
+                // Plan出力が得られなかった場合
                 planSectionContent = `\nCould not generate plan output. Please check the job logs for details.\n`;
             }
             
@@ -119,7 +119,7 @@ jobs:
               return comment.user.type === 'Bot' && comment.body.includes(commentIdentifier);
             });
             
-            // コメント本文の生成 (キャプチャの形式を模倣)
+            // コメント本文の生成
             const output = `${commentIdentifier}
             
             #### Terraform Format and Style 🖌\`${{ steps.tf_steps.outcome || 'skipped' }}\`
@@ -127,6 +127,7 @@ jobs:
             #### Terraform Validation 🤖\`${{ steps.tf_steps.outcome || 'skipped' }}\`
             <details><summary>Validation Output</summary>
             
+
             \`\`\`terraform
             ${{ steps.tf_steps.outputs.stdout || 'N/A' }}
             \`\`\`
