@@ -40,9 +40,15 @@ jobs:
       - name: Terraform Init and Plan
         run: |
           terraform init -backend=true -reconfigure
-          # Plan結果を標準出力に出力し、ファイルに保存
-          terraform plan > plan.txt
+#          # Plan結果を標準出力に出力し、ファイルに保存
+#          terraform plan > plan.txt
         working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
+
+      # Planの結果を整形してハイライト可能なdiff形式に変換
+       - name: Reformat Plan
+         run: |
+           echo '${{ steps.plan.outputs.stdout || steps.plan.outputs.stderr }}' \
+           | sed -E 's/^([[:space:]]+)([-+])/\2\1/g' > plan.txt
 
       # Planの内容を環境変数に入れる
       - name: Put Plan in Env Var
