@@ -8,13 +8,11 @@ on:
     branches:
       - master # masterブランチへのプッシュでトリガー (マージを含む)
   pull_request:
-    types: [opened, reopened, synchronize] # PRオープン、再オープン、同期（新しいコミット）でトリガー
+    paths:
+      - "**/*.tf"
     branches:
       - master # PRのターゲットブランチがmasterの場合
-    # paths: # pathsフィルターはトリガーレベルでも可能ですが、後述のアクションでより柔軟に扱います
-    #   - "**/*.tf"
-  issue_comment: # ★追加★ コメント作成イベントでトリガー
-    types: [created] # 新しいコメントが作成されたときにトリガー
+
 
 # ジョブがワークフロー中に持つ権限を設定
 # comments: write はPRにコメントするために必要です。
