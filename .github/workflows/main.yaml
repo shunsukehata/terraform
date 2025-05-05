@@ -4,58 +4,126 @@ on:
   push:
     branches:
       - master
-
   pull_request:
     branches:
       - master
+  issue_comment: # コメントイベントで実行
+    types: [created] # 新しいコメントが作成されたときにトリガー
 
 jobs:
   terraform:
     name: Terraform Workflow
     runs-on: ubuntu-latest
 
-    # AWS認証情報を環境変数として設定
     env:
+      # AWS認証情報をGitHub Secretsから環境変数として設定
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ap-northeast-1
 
     steps:
+      # -- コードチェックアウト --
+      # 差分比較のために履歴を取得し、コメントトリガーの場合はPRのHEADをチェックアウト
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # プッシュ/PR時はデフォルト、コメント時はPRのHEADリファレンスをチェックアウト
+          ref: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request.head.ref || github.ref }}
+          fetch-depth: 0 # 差分比較のために全ての履歴を取得
 
+      # --- Determine if Terraform should run ---
+      # プッシュ時のファイル変更、PR時の自動実行、コメントコマンド
+      - name: Determine Terraform Run Condition (Any .tf file change)
+        id: run-condition
+        run: |
+          SHOULD_RUN=false # 初期値
+          EVENT_NAME=${{ github.event_name }}
+
+          if [ "$EVENT_NAME" == "push" ]; then
+            echo "Event: push"
+            # プッシュ前後のコミット間で、リポジトリ内の任意の.tfファイルに変更があるかチェック
+            BASE_SHA=$(git merge-base origin/${{ github.base_ref }} ${{ github.sha }})
+            HEAD_SHA=${{ github.sha }}
+            echo "Comparing changes between $BASE_SHA and $HEAD_SHA across the repository for *.tf files."
+
+            # git diff --name-only で変更されたファイル名リストを取得し、パイプでgrepに渡す
+            if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -q "\.tf$"; then
+              echo "Detected .tf file changes anywhere in the repository on push."
+              SHOULD_RUN=true
+            else
+              echo "No .tf file changes detected anywhere in the repository on push. Skipping Terraform run."
+            fi
+
+          elif [ "$EVENT_NAME" == "pull_request" ]; then
+            echo "Event: pull_request"
+            # PR時：通常はPRがオープン/更新されたら常にPlanを実行
+            # もしPR時も変更がある場合のみ実行したい場合は、push時の差分チェックを応用
+            echo "Pull Request event. Running Terraform plan."
+            SHOULD_RUN=true # ★PR → 実行
+
+          elif [ "$EVENT_NAME" == "issue_comment" ]; then
+            echo "Event: issue_comment"
+            # PRコメント内容が "/terraform plan" と一致するかチェック
+            COMMENT_BODY="${{ github.event.comment.body }}"
+            echo "Comment: \"$COMMENT_BODY\""
+            if [[ "$COMMENT_BODY" == "/terraform plan" ]]; then
+              echo "Detected '/terraform plan' command."
+              SHOULD_RUN=true
+            else
+              echo "Command is not '/terraform plan'. Skipping Terraform run."
+            fi
+          fi
+
+          echo "should_run_terraform=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
+
+        shell: bash
+
+      # --- Setup Terraform (条件付き実行) ---
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        # 直前のステップの出力 should_run_terraform が 'true' の場合のみSetupを実行
+        if: steps.run-condition.outputs.should_run_terraform == 'true'
         with:
           terraform_version: latest
 
-      # -- 初期化 --
+      # --- 条件付きTerraformステップ群 ---
+      # Setup Terraformが成功した場合（Terraformを実行すると判断された場合）のみ実行
+
       - name: Terraform Init
         id: init
-        run: terraform init
-        # [memo]
-        # CI環境では、Stateファイルが存在しない場合でもエラーにせず、
-        # バックエンド設定に基づいて初期化するようにオプションを追加することがある
-        # run: terraform init -backend-config="bucket=${{ env.STATE_BUCKET }}" ...
+        working-directory: .
+        # Setupが成功した場合のみ実行
+        if: steps.setup-terraform.conclusion == 'success'
+        run: terraform init -input=false
 
-      # -- フォーマットチェック (オプション) --
       - name: Terraform Format Check
         id: fmt
+        working-directory: .
+        # Initが成功した場合のみ実行
+        if: steps.init.conclusion == 'success'
         run: terraform fmt -check
 
-      # -- バリデーション --
       - name: Terraform Validate
         id: validate
+        working-directory: .
+        # Initが成功した場合のみ実行
+        if: steps.init.conclusion == 'success'
         run: terraform validate -no-color
 
-      # -- プラン実行 --
       - name: Terraform Plan
         id: plan
-        # push時 または pull_request 時に実行
+        working-directory: .
+        # Initが成功した場合のみ実行
+        if: steps.init.conclusion == 'success'
         run: terraform plan -no-color -input=false
 
       # -- Apply実行 --
       - name: Terraform Apply
         id: apply
-        if: github.ref == 'refs/heads/master'
+        working-directory: .
+        # masterブランチへのpushイベントであり、かつInitが成功した場合のみ実行
+        if: |
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/master' &&
+          steps.init.conclusion == 'success'
         run: terraform apply -auto-approve -input=false
