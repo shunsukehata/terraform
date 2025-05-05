@@ -81,15 +81,20 @@ jobs:
           echo "is_plan_command=$IS_PLAN_COMMAND" >> "$GITHUB_OUTPUT"
         shell: bash # スクリプト実行にbashを使用することを明示
 
-      # --- Terraformを実行すべきか最終判断 ---
-      # 前述のチェック結果とイベントタイプを元に、Terraformステップを実行すべきか最終判断を行います。
+      # --- Determine if Terraform Should Run (シンプルテスト) ---
+      # このステップは、後続のTerraformステップを実行すべきかを判断するためのシンプルテスト版です。
       - name: Determine if Terraform Should Run (シンプルテスト)
         id: run-condition # 後続ステップで結果を参照するためのID
-        run: | # run: | の後のインデントを正確に！
-          echo "--- シンプルテスト ---"
+        run: |
+          echo "--- シンプルテスト ---" # この行が表示されるか確認
+          
+          # 後続ステップで参照できるよう最終判断を出力します。
+          # should_run=true という名前=値の形式で GITHUB_OUTPUT 環境変数で指定されたファイルに追記します。
           echo "should_run=true" >> "$GITHUB_OUTPUT"
-          echo "DEBUG: シンプルテスト出力行実行完了"
-        shell: bash # 明示的にbashを使用
+          
+          echo "DEBUG: シンプルテスト出力行実行完了" # この行が表示されるか確認
+
+        shell: bash
 
       # --- Terraform実行ステップ群 ---
       # これらのステップは、直前の Determine ステップで Terraform を実行すると判断された場合のみ実行します。
