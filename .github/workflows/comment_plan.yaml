@@ -66,8 +66,11 @@ jobs:
             
             // Planセクションに表示するコンテンツを決定
             let planSectionContent = '';
-            // terraform plan -no-color の出力に "No changes." が含まれるか確認
-            if (planOutput.includes('No changes. Your infrastructure matches the configuration.')) {
+            if (!tfChanged) {
+                // .tf ファイルの差分がない場合
+                planSectionContent = `\nNo changes detected in \`.tf\` files.\n`;
+            } else if (planOutput.includes('No changes. Your infrastructure matches the configuration.')) {
+                // plan 実行結果が「No changes」だった場合
                 planSectionContent = `\nNo changes. Your infrastructure matches the configuration.\n`;
             } else if (planOutput) {
                 // Plan結果がある場合、diff形式で表示
@@ -79,7 +82,7 @@ jobs:
             
             // 既存のボットコメントを検索
             // コメントトリガー用の新しい識別子を設定します
-            const commentIdentifier = '### Terraform Plan Result (Triggered by Comment)'; 
+            const commentIdentifier = '### Terraform Plan Result (Triggered by Comment)';
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -90,21 +93,30 @@ jobs:
               return comment.user.type === 'Bot' && comment.body.includes(commentIdentifier);
             });
             
+            // コメント本文の生成
             const output = `${commentIdentifier}
             
-            #### Terraform Format and Style 🖌\`N/A\` #### Terraform Initialization ⚙️\`${{ steps.tf_steps.outcome || 'failure' }}\` #### Terraform Validation 🤖\`N/A\` <details><summary>Validation Output</summary>
+            #### Terraform Format and Style 🖌\`${{ steps.tf_steps.outcome || 'skipped' }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.tf_steps.outcome || 'skipped' }}\`
+            #### Terraform Validation 🤖\`${{ steps.tf_steps.outcome || 'skipped' }}\`
+            <details><summary>Validation Output</summary>
+            
             
             \`\`\`terraform
-            N/A \`\`\`
+            ${{ steps.tf_steps.outputs.stdout || 'N/A' }}
+            \`\`\`
             
             </details>
             
-            #### Terraform Plan 📖\`${{ steps.tf_steps.outcome || 'failure' }}\` <details><summary>Show Plan</summary>
+            #### Terraform Plan 📖\`${{ steps.tf_steps.outcome || 'skipped' }}\`
             
-            ${planSectionContent} </details>
+            <details><summary>Show Plan</summary>
             
-            _Triggered by comment: @${{ github.actor }}_
-            _Working Directory: \`./envs/dev/souvenirConsultApp/\`_
+            ${planSectionContent}
+            
+            </details>
+            
+            _Pusher: @${{ github.actor }}, Working Directory: \`./envs/dev/souvenirConsultApp/\`_
             `;
             
             // コメントの更新または作成
