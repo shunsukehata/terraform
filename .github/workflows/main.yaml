@@ -3,60 +3,59 @@ name: Terraform CI/CD
 on:
   push:
     branches:
-      - main # mainブランチにプッシュされたときに実行
+      - master
+
+  pull_request:
+    branches:
+      - master
 
 jobs:
   terraform:
-    name: Terraform Apply
-    runs-on: ubuntu-latest # Ubuntu環境で実行
+    name: Terraform Workflow
+    runs-on: ubuntu-latest
 
     # AWS認証情報を環境変数として設定
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: ap-northeast-1 # <-- !! 使用するAWSリージョンを指定 !!
+      AWS_REGION: ap-northeast-1
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 # リポジトリのコードをチェックアウト
+        uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: latest # 使用するTerraformのバージョンを指定 (latestで最新版)
+          terraform_version: latest
 
+      # -- 初期化 --
       - name: Terraform Init
         id: init
         run: terraform init
+        # [memo]
+        # CI環境では、Stateファイルが存在しない場合でもエラーにせず、
+        # バックエンド設定に基づいて初期化するようにオプションを追加することがある
+        # run: terraform init -backend-config="bucket=${{ env.STATE_BUCKET }}" ...
 
-      - name: Terraform Format Check (Optional)
+      # -- フォーマットチェック (オプション) --
+      - name: Terraform Format Check
         id: fmt
         run: terraform fmt -check
 
+      # -- バリデーション --
       - name: Terraform Validate
         id: validate
         run: terraform validate -no-color
 
+      # -- プラン実行 --
       - name: Terraform Plan
         id: plan
-        run: terraform plan -no-color
+        # push時 または pull_request 時に実行
+        run: terraform plan -no-color -input=false
 
-       planの結果をPull Requestにコメントとして投稿する場合などに使用
-       - name: Update Pull Request with Terraform Plan
-         uses: actions/github-script@v6
-         if: github.event_name == 'pull_request'
-         with:
-           script: |
-             github.rest.issues.createComment({
-               issue_number: context.issue.number,
-               owner: context.repo.owner,
-               repo: context.repo.repo,
-               body: "Terraform Plan:\n```\n${process.env.PLAN}\n```"
-             })
-         env:
-           PLAN: ${{ steps.plan.outputs.stdout }}
-
-      # masterブランチへのpush時に自動適用
+      # -- Apply実行 --
       - name: Terraform Apply
+        id: apply
         if: github.ref == 'refs/heads/master'
-        run: terraform apply -auto-approve -input=false # -auto-approveで確認なしに適用
+        run: terraform apply -auto-approve -input=false
