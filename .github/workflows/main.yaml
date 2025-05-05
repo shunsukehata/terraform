@@ -81,42 +81,31 @@ jobs:
           echo "is_plan_command=$IS_PLAN_COMMAND" >> "$GITHUB_OUTPUT"
         shell: bash # スクリプト実行にbashを使用することを明示
 
-      # --- Determine if Terraform Should Run (シンプルテスト) ---
-      # このステップは、後続のTerraformステップを実行すべきかを判断するためのシンプルテスト版です。
-      - name: Determine if Terraform Should Run (出力デバッグ)
-        id: run-condition # 後続ステップで結果を参照するためのID
-        run: | # <-- スクリプト開始
-          echo "--- 出力デバッグテスト ---"
+      # --- ★追加デバッグステップ★ Determine ステップの出力を確認 ---
+      # 前のステップが設定した出力が、後続ステップでどう見えているかを確認します。
+      - name: Check should_run output after Determine
+        id: check_should_run_output
+        # このデバッグは常に実行します（直前のステップがスキップされても実行されるように）
+        if: always()
+        run: |
+          # steps.<step_id>.outputs.<output_name> の形式で出力を参照
+          # ${{...}} はGitHub Actionsが式を評価する構文です。
+          echo "Value of steps.run-condition.outputs.should_run = '${{ steps.run-condition.outputs.should_run }}'"
+        shell: bash
 
-          # 後続ステップで参照できるよう最終判断を出力します。
-          # should_run=true という名前=値の形式で GITHUB_OUTPUT 環境変数で指定されたファイルに追記します。
-          # ★デバッグ★ GITHUB_OUTPUT ファイルパスを表示
-          echo "DEBUG: GITHUB_OUTPUT path = '$GITHUB_OUTPUT'"
+      # ... (Setup Terraform ステップ)
 
-          # ★重要な出力設定★ should_run=true を GITHUB_OUTPUT ファイルに追記
-          echo "should_run=true" >> "$GITHUB_OUTPUT"
-          echo "DEBUG: 'should_run=true' written to $GITHUB_OUTPUT"
-
-          # ★デバッグ★ GITHUB_OUTPUT ファイルの中身を読み上げて表示
-          # これがログに表示されれば、ファイルへの書き込み自体は成功していることになります。
-          echo "DEBUG: Content of $GITHUB_OUTPUT after write:"
-          cat "$GITHUB_OUTPUT"
-          echo "DEBUG: --- End of $GITHUB_OUTPUT content ---"
-          
-          echo "DEBUG: Determine step script finished."
-
-        shell: bash # 明示的にbashを使用
-
-      # --- Terraform実行ステップ群 ---
-      # これらのステップは、直前の Determine ステップで Terraform を実行すると判断された場合のみ実行します。
-
-      # Terraformのセットアップ
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        # ★条件★ 直前の Determine ステップの出力 should_run が 'true' の場合のみSetupを実行
-        if: steps.run-condition.outputs.should_run == 'true'
-        with:
-          terraform_version: latest # 使用するTerraformのバージョンを指定
+      # --- ★追加デバッグステップ★ Setup Terraform ステップの結論を確認 ---
+      # Setup Terraform ステップが実際にどのような結論になったかを確認します。
+      - name: Check Setup Conclusion
+        id: check_setup_conclusion
+        # このデバッグは常に実行します（直前のステップがスキップされても実行されるように）
+        if: always()
+        run: |
+          # steps.<step_id>.conclusion の形式でステップの結論を参照
+          # 結論は 'success', 'failure', 'cancelled', 'skipped' のいずれかになります。
+          echo "Conclusion of steps.setup-terraform = '${{ steps.setup-terraform.conclusion }}'"
+        shell: bash
 
       # Terraform Initの実行
       - name: Terraform Init
