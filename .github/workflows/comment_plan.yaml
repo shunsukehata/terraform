@@ -1,13 +1,7 @@
-name: Terraform Plan
+name: Terraform Plan (Comment Trigger) # ワークフロー名をコメント用と明確にする
 
 on:
-  pull_request:
-    branches:
-      - master # デフォルトブランチを指定。mainなどの場合は変更
-    types:
-      - opened
-      - synchronize
-      - reopened
+  # Pull Requestのコメントが作成されたときにトリガー
   issue_comment:
     types:
       - created
@@ -18,7 +12,8 @@ jobs:
     name: Plan on Comment
     runs-on: ubuntu-latest
     # コメントトリガーで、コメント内容が"plan"で、それがPRに対するコメントの場合に実行
-    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, 'plan') && github.event.issue.pull_request
+    # トップレベルのonでissue_commentのみを指定したので、ここではコメント内容とPRに対するコメントかのチェックのみでOK
+    if: contains(github.event.comment.body, 'plan') && github.event.issue.pull_request
     permissions:
       pull-requests: write # PRにコメントするために必要
       contents: read
@@ -53,7 +48,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            // ファイルパスを修正 (コメントを削除)
+            // ファイルパスを修正
             const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8');
             const pull_request_number = context.issue.number;
             const comment = `
