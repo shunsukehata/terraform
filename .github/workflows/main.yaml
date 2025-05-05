@@ -135,11 +135,7 @@ jobs:
       # ★更新★ github-script アクションを最新バージョンに更新 (v3は非推奨)
       - name: Comment PR
         # このステップはPull Requestイベントの場合のみ実行
-        if: github.event_name == 'pull_request'
-        # ★条件★ Planステップが実行された場合のみコメントを投稿 (Planがスキップされた場合は投稿しない)
-        # continue-on-error: true の場合、Planが失敗してもこのステップは実行されます。
-        # 失敗時は steps.plan.outcome が 'failure' になります。
-        if: github.event_name == 'pull_request' && steps.plan.conclusion != 'skipped'
+        if: github.event_name == 'pull_request' && steps.plan.conclusion != 'skipped' # ★修正★ if条件をこの一行にまとめる
         uses: actions/github-script@v7
         with:
           # GitHub提供のデフォルトトークンを使用 (permissions設定で適切な権限が必要です)
