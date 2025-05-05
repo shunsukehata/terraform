@@ -82,43 +82,54 @@ jobs:
         shell: bash # スクリプト実行にbashを使用することを明示
 
       # --- Terraformを実行すべきか最終判断 ---
-      # 前述のチェック結果とイベントタイプを元に、Terraformステップを実行すべきか最終判断を行います。
-      - name: Determine if Terraform Should Run
+      # プッシュ時の変更、PR時のトリガー、コメントコマンドのいずれかに該当するか判断します。
+      - name: Determine if Terraform Should Run # ステップの名前
         id: run-condition # 後続ステップで結果を参照するためのID
+        # ★★★ ここが最も重要 ★★★
+        # run: | が正しく記述され、その後のスクリプト全体が正しくインデントされていることを確認してください。
         run: |
+          # 以降のすべての行は、run: | よりも深く、同じレベルでインデントします。
           SHOULD_RUN=false # 初期値として、Terraformは実行しないと設定
-          EVENT_NAME="${{ github.event_name }}"
+          EVENT_NAME="${{ github.event_name }}" # イベント名をクォートして取得
 
           if [ "$EVENT_NAME" == "push" ]; then
-            # プッシュ時: check-tf-changes ステップの出力が 'true' の場合のみ実行
-            # check-tf-changes ステップは push または pull_request でしか実行されないため、
-            # push イベントの場合はこの条件だけで判断できます。
-            if [ "${{ steps.check-tf-changes.outputs.tf-changes }}" == "true" ]; then
+            echo "Event: push"
+            # プッシュ時：リポジトリ内の任意の.tfファイルに変更があるかチェック
+            BASE_SHA=$(git merge-base origin/${{ github.base_ref }} ${{ github.sha }})
+            HEAD_SHA="${{ github.sha }}"
+            echo "Comparing changes between $BASE_SHA and $HEAD_SHA across the repository for *.tf files."
+            if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -q "\.tf$"; then
+              echo "Detected .tf file changes anywhere in the repository on push."
               SHOULD_RUN=true
-              echo "Trigger: Push with .tf changes detected."
             else
-              echo "Trigger: Push without .tf changes. Skipping Terraform run."
+              echo "No .tf file changes detected anywhere in the repository on push. Skipping Terraform run."
             fi
-          elif [ "$EVENT_NAME" == "pull_request" ]; then
-             # PRイベント: PRイベントであれば常にPlanを実行すると判断します。
-             # (もしPR時も変更がある場合のみ実行したいなら `${{ steps.check-tf-changes.outputs.tf-changes == 'true' }}` を条件に追加)
-            SHOULD_RUN=true
-            echo "Trigger: Pull Request event."
-          elif [ "$EVENT_NAME" == "issue_comment" ]; then
-            # コメントイベント: check-comment-command ステップの出力が 'true' の場合のみ実行
-            # check-comment-command ステップは issue_comment でしか実行されないため、
-            # issue_comment イベントの場合はこの条件だけで判断できます。
-            if [ "${{ steps.check-comment-command.outputs.is_plan_command }}" == "true" ]; then
-              SHOULD_RUN=true
-              echo "Trigger: '/terraform plan' command in comment detected."
-            else
-              echo "Trigger: Comment without command. Skipping Terraform run."
-            fi
-          fi
 
-          # 後続ステップで参照できるよう最終判断を出力します。
-          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
-        shell: bash # スクリプト実行にbashを使用することを明示
+          elif [ "$EVENT_NAME" == "pull_request" ]; then
+            echo "Event: pull_request"
+            echo "Trigger: Pull Request event." # ログに出力されるメッセージ
+            SHOULD_RUN=true
+
+          elif [ "$EVENT_NAME" == "issue_comment" ]; then
+            echo "Event: issue_comment"
+            COMMENT_BODY="${{ github.event.comment.body }}"
+            echo "Comment: \"$COMMENT_BODY\""
+            if [[ "$COMMENT_BODY" == "/terraform plan" ]]; then
+              echo "Detected '/terraform plan' command."
+              SHOULD_RUN=true
+            else
+              echo "Command is not '/terraform plan'. Skipping Terraform run."
+            fi
+          fi # if/elif/else 構造の終わり
+
+          # --- ★重要な出力行たち★ ---
+          # これらの行は、上記のif/elif/else構造が終了した後に実行されます。
+          # 'fi' と同じインデントレベルになっていることを確認してください。
+          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT" # 後続ステップで参照できるよう最終判断を出力
+
+        # ★★★ここも重要★★★
+        # shell: bash が run: | と同じインデントレベルで正しく記述されていることを確認
+        shell: bash
 
       # --- Terraform実行ステップ群 ---
       # これらのステップは、直前の Determine ステップで Terraform を実行すると判断された場合のみ実行します。
