@@ -39,16 +39,19 @@ jobs:
       # Terraform Initの実行
       - name: Terraform Init
         run: terraform init
+        working-directory: ./terraform # ここに.tfファイルがあるディレクトリを指定
 
       # Terraform Validateの実行
       - name: Terraform Validate
         id: validate
         run: terraform validate -no-color
+        working-directory: ./terraform # ここに.tfファイルがあるディレクトリを指定
 
       # Terraform Planの実行
       - name: Run terraform plan
         id: plan
         run: terraform plan -no-color
+        working-directory: ./terraform # ここに.tfファイルがあるディレクトリを指定
 
       # Planの結果を整形してハイライト可能なdiff形式に変換
       - name: Reformat Plan
