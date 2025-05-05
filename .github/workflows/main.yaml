@@ -58,5 +58,5 @@ jobs:
 
       # mainブランチへのpush時に自動適用
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/master' # mainブランチへのpushでのみ実行
+        if: github.ref == 'refs/heads/main' # mainブランチへのpushでのみ実行
         run: terraform apply -auto-approve -input=false # -auto-approveで確認なしに適用
