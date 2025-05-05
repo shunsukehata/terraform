@@ -27,6 +27,8 @@ jobs:
 
       - name: Terraform Init
         run: terraform init -backend=true -reconfigure
+        working-directory: ./envs/dev/souvenirConsultApp/
 
       - name: Terraform Apply
         run: terraform apply -auto-approve
+        working-directory: ./envs/dev/souvenirConsultApp/
