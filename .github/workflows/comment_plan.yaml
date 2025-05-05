@@ -55,7 +55,7 @@ jobs:
       - name: Read Script File
         id: read_script # このステップにIDを付与
         run: |
-          SCRIPT_CONTENT=$(cat ./scripts/format_plan_comment.js) # ファイル内容を読み込み
+          SCRIPT_CONTENT=$(cat .github/scripts/format_plan_comment.js) # ファイル内容を読み込み
           # ファイル内容を複数行の環境変数として設定
           # 環境変数名は ACTIONS_STEP_DEBUG=true でデバッグログに出力されます
           echo "SCRIPT_CONTENT<<EOF" >> $GITHUB_ENV
