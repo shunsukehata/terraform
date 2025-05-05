@@ -36,7 +36,8 @@ jobs:
         with:
           terraform_version: latest
 
-      # スクリプト実行に必要なNode.js環境をセットアップ
+      # スクリプト実行に必要なNode.js環境をセットアップ (actions/github-script が内部で使うため不要な可能性あり)
+      # 明示的にバージョンを指定したい場合は残しておきます
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -50,10 +51,23 @@ jobs:
           terraform plan -json > plan.json
         working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
 
-      # Plan結果をパースして差分形式でコメント (別ファイルで定義したスクリプトを実行)
+      # JavaScriptファイルの内容を読み込み、環境変数として設定
+      - name: Read Script File
+        id: read_script # このステップにIDを付与
+        run: |
+          SCRIPT_CONTENT=$(cat ./scripts/format_plan_comment.js) # ファイル内容を読み込み
+          # ファイル内容を複数行の環境変数として設定
+          # 環境変数名は ACTIONS_STEP_DEBUG=true でデバッグログに出力されます
+          echo "SCRIPT_CONTENT<<EOF" >> $GITHUB_ENV
+          echo "$SCRIPT_CONTENT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        # working-directory はデフォルトのリポジトリルートでOK
+        # スクリプトファイルのパスはリポジトリルートからの相対パスで指定
+
+      # Plan結果をパースして差分形式でコメント (読み込んだスクリプト内容をインラインで実行)
       - name: Add Formatted Plan comment to PR
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # 別ファイルに分けたスクリプトを指定
-          script: ./scripts/format_plan_comment.js # リポジトリルートからのスクリプトファイルのパスを指定
+          # 環境変数からスクリプト内容を取得し、インラインスクリプトとして渡す
+          script: ${{ env.SCRIPT_CONTENT }} # ★ ここを修正 ★
