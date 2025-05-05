@@ -5,4 +5,4 @@
 crash.log
 override.tf
 override.tf.json
-dev/.terraform.lock.hcl
+envs/dev/souvenirConsultApp/.terraform.lock.hcl
