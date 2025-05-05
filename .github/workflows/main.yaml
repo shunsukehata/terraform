@@ -41,22 +41,22 @@ jobs:
         id: plan
         run: terraform plan -no-color
 
-      # planの結果をPull Requestにコメントとして投稿する場合などに使用
-      # - name: Update Pull Request with Terraform Plan
-      #   uses: actions/github-script@v6
-      #   if: github.event_name == 'pull_request'
-      #   with:
-      #     script: |
-      #       github.rest.issues.createComment({
-      #         issue_number: context.issue.number,
-      #         owner: context.repo.owner,
-      #         repo: context.repo.repo,
-      #         body: "Terraform Plan:\n```\n${process.env.PLAN}\n```"
-      #       })
-      #   env:
-      #     PLAN: ${{ steps.plan.outputs.stdout }}
+       planの結果をPull Requestにコメントとして投稿する場合などに使用
+       - name: Update Pull Request with Terraform Plan
+         uses: actions/github-script@v6
+         if: github.event_name == 'pull_request'
+         with:
+           script: |
+             github.rest.issues.createComment({
+               issue_number: context.issue.number,
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               body: "Terraform Plan:\n```\n${process.env.PLAN}\n```"
+             })
+         env:
+           PLAN: ${{ steps.plan.outputs.stdout }}
 
-      # mainブランチへのpush時に自動適用
+      # masterブランチへのpush時に自動適用
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' # mainブランチへのpushでのみ実行
+        if: github.ref == 'refs/heads/master'
         run: terraform apply -auto-approve -input=false # -auto-approveで確認なしに適用
