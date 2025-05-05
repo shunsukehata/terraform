@@ -63,24 +63,25 @@ jobs:
           terraform init -backend=true -reconfigure
           terraform validate || true
           
-          # Plan結果をファイルに保存 (-no-color は不要、diff形式で整形するため)
+          # Plan結果をファイルに保存 (-no-color オプションを追加)
           # エラーが発生しても後続ステップを実行するために || true を追加
-          terraform plan > plan_output.txt || true
+          terraform plan -no-color > plan_output.txt || true # <- ここに -no-color を追加
           
           # Plan結果ファイルの内容を環境変数に格納
           if [ -f plan_output.txt ]; then
             PLAN_CONTENT=$(cat plan_output.txt)
             # 環境変数に複数行の文字列を設定
+            # キャリアリターンをLFに変換（Windows環境などでCRLFになっている可能性があるため）
+            PLAN_CONTENT=$(echo "$PLAN_CONTENT" | tr -d '\r') 
             echo "PLAN<<EOF" >> $GITHUB_ENV
             echo "$PLAN_CONTENT" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           fi
 
-      # PRコメントに結果を投稿・更新
-      # .tfファイルの差分がある/ないに関わらず実行
+      # PRコメントに結果を投稿・更新 (この部分は前回の修正から変更なし)
       - name: Add Terraform Checks and Plan comment to PR
         uses: actions/github-script@v7
-        if: github.event_name == 'pull_request' # PRイベントの場合のみ実行
+        if: github.event_name == 'pull_request'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -99,7 +100,8 @@ jobs:
                 // plan 実行結果が「No changes」だった場合
                 planSectionContent = `\nNo changes. Your infrastructure matches the configuration.\n`;
             } else if (planOutput) {
-                // Plan結果がある場合、diff形式で表示 (色付きはGitHubのレンダリングに依存)
+                // Plan結果がある場合、diff形式で表示 (エスケープシーケンスは -no-color で除去済み)
+                // ただし diff ブロックの色付けは GitHub のレンダリングに依存します
                 planSectionContent = `\n\`\`\`diff\n${planOutput}\n\`\`\`\n`;
             } else {
                 // Plan出力が得られなかった場合 (例: Plan実行ステップが失敗など)
@@ -107,14 +109,12 @@ jobs:
             }
             
             // 既存のボットコメントを検索
-            // コメントの識別のために、特定の文字列 (例: ### Terraform Summary) をコメントに含めることを推奨
             const commentIdentifier = '### Terraform Workflow Results';
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            // 自身のボットが投稿した、このワークフローの結果を示すコメントを探す
             const botComment = comments.find(comment => {
               return comment.user.type === 'Bot' && comment.body.includes(commentIdentifier);
             });
@@ -133,9 +133,13 @@ jobs:
             
             </details>
             
-            #### Terraform Plan 📖\`${{ steps.tf_steps.outcome || 'skipped' }}\` <details><summary>Show Plan</summary>
+            #### Terraform Plan 📖\`${{ steps.tf_steps.outcome || 'skipped' }}\`
             
-            ${planSectionContent} </details>
+            <details><summary>Show Plan</summary>
+            
+            ${planSectionContent}
+            
+            </details>
             
             _Pusher: @${{ github.actor }}, Working Directory: \`./envs/dev/souvenirConsultApp/\`_
             `;
@@ -156,12 +160,3 @@ jobs:
                 body: output
               });
             }
-
-#      # 差分がない場合にのみコメントするステップは不要になったため削除またはコメントアウト
-#      - name: Add No changes comment to PR
-#        if: steps.check_files.outputs.tf_changed == 'false'
-#        uses: actions/github-script@v7
-#        with:
-#          github-token: ${{ secrets.GITHUB_TOKEN }}
-#          script: |
-#            // このステップはもう実行されません
