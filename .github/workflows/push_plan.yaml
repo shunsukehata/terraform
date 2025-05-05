@@ -4,7 +4,7 @@ on:
   # Pull Requestのオープン・同期・リオープン時にトリガー
   pull_request:
     branches:
-      - master
+      - master # 対象ブランチを適宜変更してください
     types:
       - opened
       - synchronize
@@ -18,8 +18,8 @@ jobs:
     # PRオープン・同期・リオープン時に実行
     if: github.event_name == 'pull_request'
     permissions:
-      pull-requests: write
-      contents: read
+      pull-requests: write # PRにコメントするために必要
+      contents: read # コードをチェックアウトするために必要
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,6 +40,7 @@ jobs:
           terraform_version: latest
 
       # .tfファイルの差分があるかチェック
+      # このステップの結果 (outputs.tf_changed) を後続で利用します
       - name: Check for .tf file changes
         id: check_files
         uses: dorny/paths-filter@v3
@@ -49,139 +50,118 @@ jobs:
               - '**/*.tf'
               - '.terraform.lock.hcl' # ロックファイルも対象に含める
 
-      # .tfファイルの差分がある場合のみPlanを実行
-      - name: Terraform Init and Plan
-        if: steps.check_files.outputs.tf_changed == 'true'
+      # Terraform fmt, init, validate, plan を実行
+      # .tfファイルの差分がある場合のみ実行
+      - name: Run Terraform Checks and Plan
+        id: tf_steps # 各ステップの結果をまとめて参照するためのID
+        if: steps.check_files.outputs.tf_changed == 'true' # 差分がある場合のみ実行
+        working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
         run: |
+          # fmt, init, validate は失敗しても Plan を実行するために || true を追加
+          # 結果はステップの outcomes で判定します
+          terraform fmt -check -diff || true
           terraform init -backend=true -reconfigure
-          terraform plan -no-color
-        working-directory: ./envs/dev/souvenirConsultApp/
+          terraform validate || true
+          
+          # Plan結果をファイルに保存 (-no-color は不要、diff形式で整形するため)
+          # エラーが発生しても後続ステップを実行するために || true を追加
+          terraform plan > plan_output.txt || true
+          
+          # Plan結果ファイルの内容を環境変数に格納
+          if [ -f plan_output.txt ]; then
+            PLAN_CONTENT=$(cat plan_output.txt)
+            # 環境変数に複数行の文字列を設定
+            echo "PLAN<<EOF" >> $GITHUB_ENV
+            echo "$PLAN_CONTENT" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          fi
 
-          # Planの結果を整形してハイライト可能なdiff形式に変換
-      - name: Reformat Plan
-        run: |
-         echo '${{ steps.plan.outputs.stdout || steps.plan.outputs.stderr }}' \
-         | sed -E 's/^([[:space:]]+)([-+])/\2\1/g' > plan.txt
-
-        # Planの内容を環境変数に入れる
-      - name: Put Plan in Env Var
-        run: |
-           PLAN=$(cat plan.txt)
-           echo "PLAN<<EOF" >> $GITHUB_ENV
-           echo "$PLAN" >> $GITHUB_ENV
-           echo "EOF" >> $GITHUB_ENV
-
-        # PRコメントにPlanの結果を投稿
-      - name: Read Plan and Post Comment
+      # PRコメントに結果を投稿・更新
+      # .tfファイルの差分がある/ないに関わらず実行
+      - name: Add Terraform Checks and Plan comment to PR
         uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' # PRイベントの場合のみ実行
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-             // 1. Retrieve existing bot comments for the PR
-             const { data: comments } = await github.rest.issues.listComments({
-               owner: context.repo.owner,
-               repo: context.repo.repo,
-               issue_number: context.issue.number,
-             })
-             const botComment = comments.find(comment => {
-               return comment.user.type === 'Bot' && comment.body.includes('Terraform Format and Style')
-             })
-             
-             // 2. Prepare format of the comment
-             const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-             <details><summary>Validation Output</summary>
-             
-             \`\`\`terraform
-             ${{ steps.validate.outputs.stdout }}
-             \`\`\`
-             
-             </details>
-             
-             #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-             
-             <details><summary>Show Plan</summary>
-             
-             \`\`\`diff
-             ${{ env.PLAN }}
-             \`\`\`
-             
-             </details>
-             
-             *Pusher: @${{ github.actor }}, Working Directory: \`${{ matrix.directory }}\``;
-             
-             // 3. If we have a comment, update it, otherwise create a new one
-             if (botComment) {
-               await github.rest.issues.updateComment({
-                 owner: context.repo.owner,
-                 repo: context.repo.repo,
-                 comment_id: botComment.id,
-                 body: output
-               })
-             } else {
-               await github.rest.issues.createComment({
-                 issue_number: context.issue.number,
-                 owner: context.repo.owner,
-                 repo: context.repo.repo,
-                 body: output
-               })
-             }
+            // tf_changed の結果を取得
+            const tfChanged = `${{ steps.check_files.outputs.tf_changed }}` === 'true';
+            
+            // Plan結果のコンテンツを取得
+            const planOutput = process.env.PLAN || ''; // 環境変数 PLAN から取得、存在しない場合は空文字列
+            
+            // Planセクションに表示するコンテンツを決定
+            let planSectionContent = '';
+            if (!tfChanged) {
+                // .tf ファイルの差分がない場合
+                planSectionContent = `\nNo changes detected in \`.tf\` files.\n`;
+            } else if (planOutput.includes('No changes. Your infrastructure matches the configuration.')) {
+                // plan 実行結果が「No changes」だった場合
+                planSectionContent = `\nNo changes. Your infrastructure matches the configuration.\n`;
+            } else if (planOutput) {
+                // Plan結果がある場合、diff形式で表示 (色付きはGitHubのレンダリングに依存)
+                planSectionContent = `\n\`\`\`diff\n${planOutput}\n\`\`\`\n`;
+            } else {
+                // Plan出力が得られなかった場合 (例: Plan実行ステップが失敗など)
+                planSectionContent = `\nCould not generate plan output. Please check the job logs for details.\n`;
+            }
+            
+            // 既存のボットコメントを検索
+            // コメントの識別のために、特定の文字列 (例: ### Terraform Summary) をコメントに含めることを推奨
+            const commentIdentifier = '### Terraform Workflow Results';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            // 自身のボットが投稿した、このワークフローの結果を示すコメントを探す
+            const botComment = comments.find(comment => {
+              return comment.user.type === 'Bot' && comment.body.includes(commentIdentifier);
+            });
+            
+            // コメント本文の生成 (キャプチャの形式を模倣)
+            const output = `${commentIdentifier}
+            
+            #### Terraform Format and Style 🖌\`${{ steps.tf_steps.outcome || 'skipped' }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.tf_steps.outcome || 'skipped' }}\`
+            #### Terraform Validation 🤖\`${{ steps.tf_steps.outcome || 'skipped' }}\`
+            <details><summary>Validation Output</summary>
+            
+            \`\`\`terraform
+            ${{ steps.tf_steps.outputs.stdout || 'N/A' }}
+            \`\`\`
+            
+            </details>
+            
+            #### Terraform Plan 📖\`${{ steps.tf_steps.outcome || 'skipped' }}\` <details><summary>Show Plan</summary>
+            
+            ${planSectionContent} </details>
+            
+            _Pusher: @${{ github.actor }}, Working Directory: \`./envs/dev/souvenirConsultApp/\`_
+            `;
+            
+            // コメントの更新または作成
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: output
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output
+              });
+            }
 
-
-#      # 差分がある場合のみPlan結果をPRにコメント
-#      - name: Add Plan comment to PR
-#        if: steps.check_files.outputs.tf_changed == 'true'
+#      # 差分がない場合にのみコメントするステップは不要になったため削除またはコメントアウト
+#      - name: Add No changes comment to PR
+#        if: steps.check_files.outputs.tf_changed == 'false'
 #        uses: actions/github-script@v7
 #        with:
 #          github-token: ${{ secrets.GITHUB_TOKEN }}
 #          script: |
-#            const fs = require('fs');
-#            // ファイルパスを修正
-#            const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8');
-#            const pull_request_number = context.issue.number;
-#            const comment = `
-#            ### \`terraform plan\` Result
-#
-#            <details><summary>Click to expand plan</summary>
-#
-#            \`\`\`hcl
-#            ${planOutput}
-#            \`\`\`
-#
-#            </details>
-#
-#            _Ran on commit \`${context.sha}\`_
-#            `;
-#
-#            await github.rest.issues.createComment({
-#              issue_number: pull_request_number,
-#              owner: context.repo.owner,
-#              repo: context.repo.repo,
-#              body: comment
-#            });
-
-      # .tfファイルの差分がない場合にその旨をコメント
-      - name: Add No changes comment to PR
-        if: steps.check_files.outputs.tf_changed == 'false'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const pull_request_number = context.issue.number;
-            const comment = `
-            ### \`terraform plan\` Skipped
-            
-            No changes detected in \`.tf\` files.
-            
-            _Ran on commit \`${context.sha}\`_
-            `;
-            
-            await github.rest.issues.createComment({
-              issue_number: pull_request_number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
-    
+#            // このステップはもう実行されません
