@@ -4,7 +4,7 @@ on:
   # Pull Requestのオープン・同期・リオープン時にトリガー
   pull_request:
     branches:
-      - master
+      - master # 対象ブランチを適宜変更してください
     types:
       - opened
       - synchronize
@@ -18,8 +18,8 @@ jobs:
     # PRオープン・同期・リオープン時に実行
     if: github.event_name == 'pull_request'
     permissions:
-      pull-requests: write
-      contents: read
+      pull-requests: write # PRにコメントするために必要
+      contents: read # コードをチェックアウトするために必要
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,6 +40,7 @@ jobs:
           terraform_version: latest
 
       # .tfファイルの差分があるかチェック
+      # このステップの結果 (outputs.tf_changed) を後続で利用します
       - name: Check for .tf file changes
         id: check_files
         uses: dorny/paths-filter@v3
@@ -78,6 +79,7 @@ jobs:
           fi
 
       # PRコメントに結果を投稿・更新
+
       - name: Add Terraform Checks and Plan comment to PR
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
@@ -125,6 +127,7 @@ jobs:
             #### Terraform Validation 🤖\`${{ steps.tf_steps.outcome || 'skipped' }}\`
             <details><summary>Validation Output</summary>
             
+
             \`\`\`terraform
             ${{ steps.tf_steps.outputs.stdout || 'N/A' }}
             \`\`\`
