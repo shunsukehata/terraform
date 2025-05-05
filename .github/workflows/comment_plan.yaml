@@ -49,7 +49,7 @@ jobs:
           terraform init -backend=true -reconfigure
           # Plan結果をJSON形式で出力し、ファイルに保存
           terraform plan -json > plan.json
-        working-directory: ~./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
+        working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
 
       # JavaScriptファイルの内容を読み込み、環境変数として設定
       - name: Read Script File
