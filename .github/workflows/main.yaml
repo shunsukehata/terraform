@@ -159,60 +159,60 @@ jobs:
       # --- Setup Terraform (サイレント失敗の可能性あり) ---
       # Terraform CLI をセットアップします。
 
-    # ★デバッグ★ Setup Terraform 実行前の環境情報 (残しておくと診断に役立ちます)
-    - name: Debug Setup Terraform Environment
-      run: |
-        echo "DEBUG: PATH before setup: $PATH"
-        echo "DEBUG: Which terraform before setup:"
-        which terraform || echo "DEBUG: terraform not found before setup"
-        echo "DEBUG: Current directory: $(pwd)"
-      shell: bash
+      # ★デバッグ★ Setup Terraform 実行前の環境情報 (残しておくと診断に役立ちます)
+      - name: Debug Setup Terraform Environment
+        run: |
+          echo "DEBUG: PATH before setup: $PATH"
+          echo "DEBUG: Which terraform before setup:"
+          which terraform || echo "DEBUG: terraform not found before setup"
+          echo "DEBUG: Current directory: $(pwd)"
+        shell: bash
 
-    # Setup Terraform 本体 (アクションバージョンを @v4 に変更)
-    - name: Setup Terraform
-      # ★修正★ uses: hashicorp/setup-terraform@v4 に変更
-      uses: hashicorp/setup-terraform@v4
-      # continue-on-error: true は、Setupが成功しなかった場合に後続のデバッグステップで結論を確認するために残しておくと良いです。
-      continue-on-error: true
+      # Setup Terraform 本体 (アクションバージョンを @v4 に変更)
+      - name: Setup Terraform
+        # ★修正★ uses: hashicorp/setup-terraform@v4 に変更
+        uses: hashicorp/setup-terraform@v4
+        # continue-on-error: true は、Setupが成功しなかった場合に後続のデバッグステップで結論を確認するために残しておくと良いです。
+        continue-on-error: true
 
-      with:
-        # 1.7.5 で Setup が success になるか @v4 で確認します。
-        terraform_version: 1.7.5 # ← バージョンは一旦このまま試します
-        # 必要に応じて他のwith設定を追加 (YAMLのインデントに注意)
-        # cli_config_credentials_hostname: app.terraform.io
-        # terraform_wrapper: true
+        with:
+          # 1.7.5 で Setup が success になるか @v4 で確認します。
+          terraform_version: 1.7.5 # ← バージョンは一旦このまま試します
+          # 必要に応じて他のwith設定を追加 (YAMLのインデントに注意)
+          # cli_config_credentials_hostname: app.terraform.io
+          # terraform_wrapper: true
 
-      # 環境変数はジョブレベルで設定済みのため、ここでは不要です。
+        # 環境変数はジョブレベルで設定済みのため、ここでは不要です。
 
-    # ★デバッグ★ Setup Terraform 実行後の結果と環境情報 (残しておくと診断に役立ちます)
-    - name: Debug Setup Terraform Outcome
-      # Setup ステップが continue-on-error: true のため、Setupが失敗してもこのステップは実行されます。
-      run: |
-        # steps.<step_id>.conclusion はステップの結論 ('success', 'failure', 'cancelled', 'skipped')
-        echo "DEBUG: Conclusion of steps.setup-terraform = '${{ steps.setup-terraform.conclusion }}'"
-        
-        echo "DEBUG: PATH after setup: $PATH"
-        echo "DEBUG: Which terraform after setup:"
-        which terraform || echo "DEBUG: terraform not found after setup"
-        
-        echo "DEBUG: Terraform version after setup:"
-        if terraform --version; then
-            echo "DEBUG: terraform --version command succeeded."
-        else
-            echo "DEBUG: terraform --version command failed."
-        fi
+      # ★デバッグ★ Setup Terraform 実行後の結果と環境情報 (残しておくと診断に役立ちます)
+      - name: Debug Setup Terraform Outcome
+        # Setup ステップが continue-on-error: true のため、Setupが失敗してもこのステップは実行されます。
+        run: |
+          # steps.<step_id>.conclusion はステップの結論 ('success', 'failure', 'cancelled', 'skipped')
+          echo "DEBUG: Conclusion of steps.setup-terraform = '${{ steps.setup-terraform.conclusion }}'"
+          
+          echo "DEBUG: PATH after setup: $PATH"
+          echo "DEBUG: Which terraform after setup:"
+          which terraform || echo "DEBUG: terraform not found after setup"
+          
+          echo "DEBUG: Terraform version after setup:"
+          if terraform --version; then
+              echo "DEBUG: terraform --version command succeeded."
+          else
+              echo "DEBUG: terraform --version command failed."
+          fi
 
-      shell: bash
+        shell: bash
 
-    # --- Terraform Init ---
-    # Init ステップの条件は Setup Terraform Outcome ステップで確認した結論に依存
-    - name: Terraform Init
-      id: init
-      working-directory: . # TF構成ファイルのルートディレクトリ
-      # ★条件★ Setup Terraform が 'success' という結論になった場合のみ実行
-      # Debug Setup Terraform Outcome ステップの出力でこの結論が確認できます。
-      if: steps.setup-terraform.conclusion == 'success'
-      run: terraform init -input=false
+      # --- Terraform Init ---
+      # Init ステップの条件は Setup Terraform Outcome ステップで確認した結論に依存
+      - name: Terraform Init
+        id: init
+        working-directory: . # TF構成ファイルのルートディレクトリ
+        # ★条件★ Setup Terraform が 'success' という結論になった場合のみ実行
+        # Debug Setup Terraform Outcome ステップの出力でこの結論が確認できます。
+        if: steps.setup-terraform.conclusion == 'success'
+        run: terraform init -input=false
 
       # Terraform Validateの実行
       - name: Terraform Validate
