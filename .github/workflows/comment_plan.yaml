@@ -36,71 +36,24 @@ jobs:
         with:
           terraform_version: latest
 
-      # Terraform Init と Plan
-      - name: Terraform Init and Plan
+      # スクリプト実行に必要なNode.js環境をセットアップ
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # スクリプトの実行に必要なNode.jsバージョンを指定
+
+      # Terraform Init と Plan (JSON出力)
+      - name: Terraform Init and Plan (JSON)
         run: |
           terraform init -backend=true -reconfigure
-#          # Plan結果を標準出力に出力し、ファイルに保存
-#          terraform plan > plan.txt
+          # Plan結果をJSON形式で出力し、ファイルに保存
+          terraform plan -json > plan.json
         working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
 
-      # Planの結果を整形してハイライト可能なdiff形式に変換
-       - name: Reformat Plan
-         run: |
-           echo '${{ steps.plan.outputs.stdout || steps.plan.outputs.stderr }}' \
-           | sed -E 's/^([[:space:]]+)([-+])/\2\1/g' > plan.txt
-
-      # Planの内容を環境変数に入れる
-      - name: Put Plan in Env Var
-        run: |
-          PLAN=$(cat plan.txt)
-          echo "PLAN<<EOF" >> $GITHUB_ENV
-          echo "$PLAN" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      # PRコメントにPlanの結果を投稿
-      - name: Read Plan and Post Comment
+      # Plan結果をパースして差分形式でコメント (別ファイルで定義したスクリプトを実行)
+      - name: Add Formatted Plan comment to PR
         uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            // 1. Retrieve existing bot comments for the PR
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            })
-            const botComment = comments.find(comment => {
-              return comment.user.type === 'Bot' && comment.body.includes('Terraform Plan Result')
-            })
-
-            // 2. Prepare format of the comment
-            const output = `
-            #### Terraform Plan 📖
-            <details><summary>Show Plan</summary>
-
-            \`\`\`diff
-            ${{ env.PLAN }}
-            \`\`\`
-
-            </details>
-
-            *Pusher: @${{ github.actor }}, Working Directory: \`${{ github.workspace }}/envs/dev/souvenirConsultApp\``;
-
-            // 3. If we have a comment, update it, otherwise create a new one
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: output
-              })
-            } else {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: output
-              })
-            }
+          # 別ファイルに分けたスクリプトを指定
+          script: ./scripts/format_plan_comment.js # リポジトリルートからのスクリプトファイルのパスを指定
