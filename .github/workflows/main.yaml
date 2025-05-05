@@ -92,9 +92,11 @@ jobs:
           SHOULD_RUN=false # 初期値として、Terraformは実行しないと設定
           EVENT_NAME="${{ github.event_name }}" # イベント名をクォートして取得
 
+          # Debug: GITHUB_OUTPUT path
+          echo "DEBUG: GITHUB_OUTPUT path = '$GITHUB_OUTPUT'"
+
           if [ "$EVENT_NAME" == "push" ]; then
             echo "Event: push"
-            # プッシュ時：リポジトリ内の任意の.tfファイルに変更があるかチェック
             BASE_SHA=$(git merge-base origin/${{ github.base_ref }} ${{ github.sha }})
             HEAD_SHA="${{ github.sha }}"
             echo "Comparing changes between $BASE_SHA and $HEAD_SHA across the repository for *.tf files."
@@ -108,7 +110,7 @@ jobs:
           elif [ "$EVENT_NAME" == "pull_request" ]; then
             echo "Event: pull_request"
             echo "Trigger: Pull Request event." # ログに出力されるメッセージ
-            SHOULD_RUN=true
+            SHOULD_RUN=true # SHOULD_RUN が true に設定されるはず
 
           elif [ "$EVENT_NAME" == "issue_comment" ]; then
             echo "Event: issue_comment"
@@ -125,7 +127,27 @@ jobs:
           # --- ★重要な出力行たち★ ---
           # これらの行は、上記のif/elif/else構造が終了した後に実行されます。
           # 'fi' と同じインデントレベルになっていることを確認してください。
-          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT" # 後続ステップで参照できるよう最終判断を出力
+
+          # ★デバッグ★ 出力行の直前でSHOULD_RUNの値を確認
+          echo "DEBUG: Value of SHOULD_RUN before outputting: $SHOULD_RUN"
+
+          # 後続ステップで参照できるよう最終判断を出力
+          # ★★★この行がGitHub Actionsに捕捉されるか、まだ問題の可能性あり★★★
+          # この行の実行痕跡がログに見えるか、後続ステップがこれを認識できるかが鍵
+          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
+
+          # ★デバッグ★ 出力設定直後の確認
+          # このメッセージがログに表示されれば、直前のecho >> $GITHUB_OUTPUT コマンド自体はシェルに実行されたことになります。
+          echo "DEBUG: Output setting command executed."
+
+          # ★デバッグ★ GITHUB_OUTPUT ファイルの中身を読み上げて表示
+          # これがログに表示されれば、ファイルへの書き込み自体は成功していることになります。
+          # cat コマンドが実行された痕跡と、その出力の両方を確認します。
+          echo "DEBUG: Content of $GITHUB_OUTPUT after write:"
+          cat "$GITHUB_OUTPUT"
+          echo "DEBUG: --- End of $GITHUB_OUTPUT content ---"
+
+          echo "DEBUG: Determine step script finished."
 
         # ★★★ここも重要★★★
         # shell: bash が run: | と同じインデントレベルで正しく記述されていることを確認
