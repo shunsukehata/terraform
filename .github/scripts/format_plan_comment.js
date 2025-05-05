@@ -128,11 +128,7 @@ try {
 core.setOutput('comment_body', `
 ### \`terraform plan\` Result (Triggered by comment)
 
-<details><summary>Click to expand plan</summary>
-
 ${diffOutput} # 整形されたMarkdownをそのまま埋め込み
-
-</details>
 
 _Ran on commit \`${context.sha}\`_
 `);
