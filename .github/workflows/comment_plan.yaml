@@ -1,4 +1,4 @@
-name: Terraform Comment Plan
+name: Terraform Plan (Comment Trigger) # ワークフロー名をコメント用と明確にする
 
 on:
   # Pull Requestのコメントが作成されたときにトリガー
@@ -35,29 +35,45 @@ jobs:
         with:
           terraform_version: latest
 
-      - name: Terraform Init and Plan
+      # terraform-markdown ツールをインストール (Node.js が必要)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # 適切なNode.jsバージョンを指定
+      - name: Install terraform-markdown
+        run: npm install -g terraform-markdown
+
+      # Terraform Init と Plan (JSON出力)
+      - name: Terraform Init and Plan (JSON)
         run: |
           terraform init -backend=true -reconfigure
-          terraform plan -no-color | tee plan.txt # 出力をファイルに保存して色を消す
-        working-directory: ./envs/dev/souvenirConsultApp/
+          # Plan結果をJSON形式で出力し、ファイルに保存
+          terraform plan -json > plan.json
+        working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
 
-      - name: Add Plan comment to PR
+      # Plan結果をMarkdownに整形
+      - name: Format Plan Output to Markdown
+        run: |
+          # terraform-markdown を実行し、JSONファイルをMarkdownに変換
+          terraform-markdown ./envs/dev/souvenirConsultApp/plan.json > plan.md
+        # working-directory は不要 (npm install -g でインストールされているためパスが通っている)
+
+      # 整形されたPlan結果をPRにコメント
+      - name: Add Formatted Plan comment to PR
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            // ファイルパスを修正
-            const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8');
+            // 整形されたMarkdownファイルを読み込む
+            const planOutput = fs.readFileSync('plan.md', 'utf8');
             const pull_request_number = context.issue.number;
             const comment = `
             ### \`terraform plan\` Result (Triggered by comment)
 
             <details><summary>Click to expand plan</summary>
 
-            \`\`\`hcl
-            ${planOutput}
-            \`\`\`
+            ${planOutput} # 整形されたMarkdownをそのまま埋め込み
 
             </details>
 
