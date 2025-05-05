@@ -34,7 +34,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -57,7 +57,7 @@ jobs:
         run: |
           terraform init -backend=true -reconfigure
           terraform plan -no-color | tee plan.txt # 出力をファイルに保存して色を消す
-        working-directory: ./envs/dev/souvenirConsultApp/
+        working-directory: ./envs/dev/*/ # Terraformのルートモジュールディレクトリを指定
 
       # 差分がある場合のみPlan結果をPRにコメント
       - name: Add Plan comment to PR
@@ -67,8 +67,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            // ファイルパスを修正
-            const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8'); # ★ この行のパスを修正 ★
+            // ファイルパスを修正 (コメントを削除)
+            const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8');
             const pull_request_number = context.issue.number;
             const comment = `
             ### \`terraform plan\` Result
@@ -147,7 +147,7 @@ jobs:
         run: |
           terraform init -backend=true -reconfigure
           terraform plan -no-color | tee plan.txt # 出力をファイルに保存して色を消す
-        working-directory: ./envs/dev/souvenirConsultApp/
+        working-directory: ./envs/dev/*/ # Terraformのルートモジュールディレクトリを指定
 
       - name: Add Plan comment to PR
         uses: actions/github-script@v7
@@ -155,8 +155,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            // ファイルパスを修正
-            const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8'); # ★ この行のパスを修正 ★
+            // ファイルパスを修正 (コメントを削除)
+            const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8');
             const pull_request_number = context.issue.number;
             const comment = `
             ### \`terraform plan\` Result (Triggered by comment)
