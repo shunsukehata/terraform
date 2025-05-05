@@ -13,12 +13,12 @@ on:
       - created
 
 jobs:
-  # Pull Requestのオープン・同期・リオープン時のPlan実行ジョブ
-  pull_request_plan:
-    name: Plan on PR
+  # コメントによるPlan実行ジョブ
+  comment_plan:
+    name: Plan on Comment
     runs-on: ubuntu-latest
-    # PRオープン・同期・リオープン時、かつコメントがトリガーでない場合に実行
-    if: github.event_name == 'pull_request'
+    # コメントトリガーで、コメント内容が"plan"で、それがPRに対するコメントの場合に実行
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, 'plan') && github.event.issue.pull_request
     permissions:
       pull-requests: write # PRにコメントするために必要
       contents: read
@@ -26,8 +26,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }} # PRのHEADをチェックアウト
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.issue.pull_request.head.ref }} # PRのHEADをチェックアウト
+          repository: ${{ github.event.issue.pull_request.head.repo.full_name }}
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -41,27 +41,13 @@ jobs:
         with:
           terraform_version: latest
 
-      # .tfファイルの差分があるかチェック
-      - name: Check for .tf file changes
-        id: check_files
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            tf_changed:
-              - '**/*.tf'
-              - '.terraform.lock.hcl' # ロックファイルも対象に含める
-
-      # .tfファイルの差分がある場合のみPlanを実行
       - name: Terraform Init and Plan
-        if: steps.check_files.outputs.tf_changed == 'true'
         run: |
           terraform init -backend=true -reconfigure
           terraform plan -no-color | tee plan.txt # 出力をファイルに保存して色を消す
         working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
 
-      # 差分がある場合のみPlan結果をPRにコメント
       - name: Add Plan comment to PR
-        if: steps.check_files.outputs.tf_changed == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -71,7 +57,7 @@ jobs:
             const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8');
             const pull_request_number = context.issue.number;
             const comment = `
-            ### \`terraform plan\` Result
+            ### \`terraform plan\` Result (Triggered by comment)
 
             <details><summary>Click to expand plan</summary>
 
@@ -80,29 +66,6 @@ jobs:
             \`\`\`
 
             </details>
-
-            _Ran on commit \`${context.sha}\`_
-            `;
-
-            await github.rest.issues.createComment({
-              issue_number: pull_request_number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
-
-      # .tfファイルの差分がない場合にその旨をコメント
-      - name: Add No changes comment to PR
-        if: steps.check_files.outputs.tf_changed == 'false'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const pull_request_number = context.issue.number;
-            const comment = `
-            ### \`terraform plan\` Skipped
-
-            No changes detected in \`.tf\` files.
 
             _Ran on commit \`${context.sha}\`_
             `;
