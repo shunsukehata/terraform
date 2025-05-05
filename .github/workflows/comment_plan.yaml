@@ -71,4 +71,3 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # 環境変数からスクリプト内容を取得し、インラインスクリプトとして渡す
           script: ${{ env.SCRIPT_CONTENT }} # ★ ここを修正 ★
-        # スクリプト内で core.setOutput を使用するため、特に他の設定は不要
