@@ -1,91 +1,256 @@
 # .github/workflows/main.yaml
 
-name: "Terraform CI/CD Workflow" # ワークフロー名をより包括的なものに変更
+name: "Terraform CI/CD Workflow" # ワークフロー名
 
-# ワークフローがトリガーされるイベントを設定
+# ★修正★ ワークフローがトリガーされるイベントを設定
 on:
-  push:
+  pull_request: # Pull Request イベントでトリガー
+    types: [opened, reopened, synchronize] # PRオープン、再オープン、新しいコミットのプッシュ時に実行
     branches:
-      - master # masterブランチへのプッシュでトリガー (マージを含む)
-  pull_request:
-    types: [opened, reopened, synchronize] # PRオープン、再オープン、同期（新しいコミット）でトリガー
-    branches:
-      - master # PRのターゲットブランチがmasterの場合
-    # paths: # pathsフィルターはトリガーレベルでも可能ですが、後述のアクションでより柔軟に扱います
+      - master # PRのターゲットブランチが master の場合のみ実行
+
+    # 必要に応じて、特定のファイルパスに変更があった場合のみトリガーするpathsフィルターも追加できます。
+    # 例: リポジトリ内の任意の.tfファイルに変更があった場合のみトリガー
+    # paths:
     #   - "**/*.tf"
-  issue_comment: # ★追加★ コメント作成イベントでトリガー
-    types: [created] # 新しいコメントが作成されたときにトリガー
 
 # ジョブがワークフロー中に持つ権限を設定
 # comments: write はPRにコメントするために必要です。
 # contents: read はコードをチェックアウトするために必要です。
-# pull-requests: write はPRの状態（マージ可能性など）を読み取るために必要になる場合があります。
-# issues: write はコメントに関連する場合（コメントの編集/削除など）に必要になる場合があります。
+# pull-requests: write はPRの状態を読み取るために必要になる場合があります。
+# issues: write はコメントに関連する場合に必要になる場合があります。
 permissions:
-  contents: read
-  pull-requests: write
-  issues: write # コメントトリガーの場合に推奨
+  contents: read # コードチェックアウトに必要
+  pull-requests: write # PRにコメントするために必要
+  issues: write # PRにコメントするために必要 (pull-requests write と合わせてコメント投稿に必要な場合あり)
 
 jobs:
-  terraform:
-    name: 'Terraform Checks'
-    runs-on: ubuntu-latest
+  terraform-checks: # ジョブ名を分かりやすく変更 (例: terraform-checks)
+    name: 'Terraform Checks for ${{ matrix.directory }}' # matrixのディレクトリ名をジョブ名に含める
+    runs-on: ubuntu-latest # 実行環境
+
     strategy:
       matrix:
-        # stg, prodは未使用のため一旦コメントアウト
+        # Terraformコードが存在するディレクトリを指定します。
+        # 'environments/dev' ディレクトリのTerraformコードに対してジョブが実行されます。
+        directory: ['environments/dev'] # ご提示のmatrix設定をそのまま使用
+        # 例: 他の環境も追加する場合
         # directory: ['environments/dev', 'environments/stg', 'environments/prod']
-        directory: ['environments/dev']
+
+      # matrixジョブ全体の設定 (特定のmatrixジョブが失敗しても他のジョブを続行するかなど)
+      fail-fast: false # デフォルトはtrue。falseにすると、あるmatrixジョブが失敗しても他のジョブは続行。
+
     defaults:
       run:
-        working-directory: ${{ matrix.directory }}
+        # このジョブ内の全ての run ステップは、ここで指定されたディレクトリで実行されます。
+        working-directory: ${{ matrix.directory }} # matrixで指定されたディレクトリを作業ディレクトリとする
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      # -- コードチェックアウト --
+      # ★更新★ checkout アクションを最新バージョンに更新 (セキュリティと機能向上)
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      # -- Terraformのセットアップ --
+      # ★更新★ setup-terraform アクションを最新バージョンに更新
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v1
-
-      - name: Setup AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: hashicorp/setup-terraform@v3
         with:
+          # 必要に応じて、Terraformのバージョンを指定
+          terraform_version: latest # 最新版を使用
+
+      # -- AWS認証情報の設定 --
+      # ★更新★ configure-aws-credentials アクションを最新バージョンに更新 (v1は非推奨)
+      - name: Setup AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # GitHub Secretsに登録されたAWS認証情報を使用
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # リソースを作成するAWSリージョンを指定 (例: 東京リージョン)
           aws-region: ap-northeast-1
+          # 必要に応じて、IAMロールの引き受け設定などを追加 (よりセキュア)
+          # role-to-assume: arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/YourGitHubActionsRole
+          # web-identity-token-file: ${{ runner.temp }}/token # OIDC連携の場合
+          # role-duration-seconds: 900
 
-      - name: Terraform Format
-        id: fmt
-        run: terraform fmt -check
-
+      # -- ディレクトリが空でないかチェック --
+      # 作業ディレクトリにTerraformコードが存在するか確認します。
       - name: Check if directory is not empty
-        id: check
+        id: check_dir # IDを追加
+        # run ステップのworking-directoryはdefaultsで指定済
         run: |
+          # 作業ディレクトリ内のファイルリストを取得し、出力が空でないかチェック
           if [ "$(ls -A .)" ]; then
-            echo "Directory is not empty"
+            echo "Directory is not empty. Proceeding with Terraform checks."
+            # ディレクトリが空でないことを示す出力変数を設定 (後続ステップの条件に使用可能)
+            # echo "directory_not_empty=true" >> "$GITHUB_OUTPUT" # 必要であれば
           else
-            echo "Directory is empty"
+            echo "Directory '${{ matrix.directory }}' is empty. Skipping Terraform checks for this directory."
+            # ディレクトリが空の場合、ジョブを失敗させる (matrix戦略とfail-fast=false の組み合わせで他のディレクトリのチェックは続行)
             exit 1
           fi
+        shell: bash # スクリプト実行にbashを使用
 
+      # -- Terraform Format Check --
+      # コードのフォーマットが規約に従っているかチェック
+      - name: Terraform Format
+        id: fmt # IDを追加
+        # run ステップのworking-directoryはdefaultsで指定済
+        # 必要に応じて、前のステップの結果でスキップする条件を追加できます
+        # if: steps.check_dir.conclusion == 'success' # 例: ディレクトリが空でない場合のみ実行
+        run: terraform fmt -check # フォーマットエラーがあれば非ゼロ終了コードを返し、ステップが失敗します
+
+      # -- Terraform Init --
+      # Terraformプロバイダとモジュールを初期化します。
       - name: Terraform Init
-        id: init
-        run: terraform init
+        id: init # IDを追加
+        # run ステップのworking-directoryはdefaultsで指定済
+        # 必要に応じて、前のステップの結果でスキップする条件を追加できます
+        # if: steps.check_dir.conclusion == 'success' # 例: ディレクトリが空でない場合のみ実行
+        run: terraform init # Stateバックエンド設定はversions.tfに記述されている必要があります
 
+      # -- Terraform Validate --
+      # Terraformコードの構文と構成が正しいか検証します。
+      - name: Terraform Validate
+        id: validate # IDを追加
+        # run ステップのworking-directoryはdefaultsで指定済
+        # 必要に応じて、前のステップの結果でスキップする条件を追加できます
+        # if: steps.init.conclusion == 'success' # 例: Initが成功した場合のみ実行
+        run: terraform validate -no-color # カラー出力を無効化
+
+      # -- Terraform Plan --
+      # インフラストラクチャに加えられる変更の実行計画を生成します。
       - name: Terraform Plan
-        id: plan
-        run: terraform plan -no-color
-        continue-on-error: true
+        id: plan # IDを追加
+        # run ステップのworking-directoryはdefaultsで指定済
+        # 必要に応じて、前のステップの結果でスキップする条件を追加できます
+        # if: steps.validate.conclusion == 'success' # 例: Validateが成功した場合のみ実行
+        run: terraform plan -no-color # カラー出力を無効化
+        # Planが失敗しても後続のステップ（コメント投稿など）を実行したい場合は true に設定
+        continue-on-error: true # ご提示の設定を維持
 
+      # -- Plan結果を整形してコメント投稿 --
+      # Planの結果をPull Requestにコメントとして投稿します。
+      # ★更新★ github-script アクションを最新バージョンに更新 (v3は非推奨)
       - name: Comment PR
-        uses: actions/github-script@v3
+        # このステップはPull Requestイベントの場合のみ実行
+        if: github.event_name == 'pull_request'
+        # ★条件★ Planステップが実行された場合のみコメントを投稿 (Planがスキップされた場合は投稿しない)
+        # continue-on-error: true の場合、Planが失敗してもこのステップは実行されます。
+        # 失敗時は steps.plan.outcome が 'failure' になります。
+        if: github.event_name == 'pull_request' && steps.plan.conclusion != 'skipped'
+        uses: actions/github-script@v7
         with:
+          # GitHub提供のデフォルトトークンを使用 (permissions設定で適切な権限が必要です)
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outputs.stdout }}\`
-            #### Terraform Initialization ⚙️\`${{ steps.init.outputs.stdout }}\`
-            #### Terraform Plan 📖\`${{ steps.plan.outputs.stdout }}\``;
-            github.issues.createComment({
-              issue_number: context.issue.number,
+          script: | # Node.js 環境で実行されるスクリプトです。
+
+            // Plan結果を取得。成功時は stdout, 失敗時は stderr を使用。
+            // steps.<step_id>.outcome は 'success', 'failure', 'skipped', 'cancelled'
+            const planOutput = `${{ steps.plan.conclusion == 'success' && steps.plan.outputs.stdout || steps.plan.outputs.stderr }}`;
+
+            // 2. Prepare format of the comment
+            // 各ステップの結果やPlan結果を整形してコメント本文を作成します。
+            const output = `#### Terraform checks for \`${{ matrix.directory }}\`
+
+              #### Terraform Format 🖌\`${{ steps.fmt.conclusion }}\`
+              #### Terraform Initialization ⚙️\`${{ steps.init.conclusion }}\`
+              #### Terraform Validate 🤖\`${{ steps.validate.conclusion }}\`
+
+              <details><summary>Validation Output</summary>
+
+              \`\`\`terraform
+              ${{ steps.validate.outputs.stdout }} // Validate の標準出力 (失敗時は stderr の場合あり)
+              \`\`\`
+
+              </details>
+
+              #### Terraform Plan 📖\`${{ steps.plan.conclusion }}\`
+
+              <details><summary>Show Plan</summary>
+
+              \`\`\`diff
+              ${planOutput} // Planの結果 (stdout または stderr)
+              \`\`\`
+
+              </details>
+
+              *Workflow triggered by @${{ github.actor }} in directory \`${{ matrix.directory }}\`*
+              `; // コメント本文の末尾
+
+            // 3. Post or Update Comment
+            // GitHub Actions Botが過去に投稿したコメントを探し、あれば更新、なければ新規作成します。
+            // コメント内容に特定の識別子を含めると、ボットの他のコメントと区別しやすくなります。
+            // 例: const commentIdentifier = '';
+
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## Terraform checks in directory '${{ matrix.directory }}'\n` + output
-            })
+              issue_number: context.issue.number,
+            });
+
+            // 特定の識別子を含むボットコメントを検索 (必要に応じて commentIdentifier を定義)
+            const botComment = comments.find(comment => {
+               // 現在はボットかつ、特定の文字列（例：'#### Terraform checks for'）を含むコメントを探す
+              return comment.user.type === 'Bot' && comment.body.includes(`#### Terraform checks for \`${{ matrix.directory }}\``);
+            });
+
+
+            if (botComment) {
+              // 既存コメントがある場合、更新
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: output
+              });
+            } else {
+              // 既存コメントがない場合、新規作成
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output
+              });
+            }
+
+      # Applyステップは含まれていません。通常PlanとApplyは別のワークフローやジョブで行います。
+      # Applyを同じジョブで行う場合は、Planステップの後に条件付きで追加します。
+      # 例: プッシュイベントかつ master ブランチの場合のみ Apply
+      # - name: Terraform Apply
+      #   if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      #   run: terraform apply -auto-approve -input=false
+
+
+# Apply ジョブを別途定義する例 (Plan ジョブとは別にする推奨構成)
+# Plan ジョブが成功した場合にトリガーするなども可能です。
+# jobs:
+#   terraform-apply:
+#     needs: terraform-checks # 必要に応じて plan ジョブの成功に依存させる
+#     if: github.event_name == 'push' && github.ref == 'refs/heads/master' # Push to master でトリガー
+#     runs-on: ubuntu-latest
+#     strategy:
+#       matrix:
+#         directory: ['environments/dev'] # Applyしたいディレクトリを指定
+#     defaults:
+#       run:
+#         working-directory: ${{ matrix.directory }}
+#     permissions: # Apply に必要な AWS 権限などをここで設定
+#       contents: read
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+#       - name: Setup Terraform
+#         uses: hashicorp/setup-terraform@v3
+#       - name: Setup AWS Credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ap-northeast-1
+#       - name: Terraform Init (Apply用)
+#         run: terraform init
+#         # State バックエンドの設定をここでも正しく行う必要があります。
+#       - name: Terraform Apply
+#         run: terraform apply -auto-approve -input=false
