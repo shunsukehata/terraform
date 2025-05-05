@@ -36,25 +36,13 @@ jobs:
         with:
           terraform_version: latest
 
-      # スクリプト実行に必要なNode.js環境をセットアップ
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20' # スクリプトの実行に必要なNode.jsバージョンを指定
-
-      # Terraform Init と Plan (JSON出力)
-      - name: Terraform Init and Plan (JSON)
+      # Terraform Init と Plan
+      - name: Terraform Init and Plan
         run: |
           terraform init -backend=true -reconfigure
-          # Plan結果をJSON形式で出力し、ファイルに保存
-          terraform plan -json > plan.json
+          # Plan結果を標準出力に出力し、ファイルに保存
+          terraform plan > plan.txt
         working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
-
-      # Planの結果を整形してハイライト可能なdiff形式に変換
-      - name: Reformat Plan
-        run: |
-          echo '${{ steps.plan.outputs.stdout || steps.plan.outputs.stderr }}' \
-          | sed -E 's/^([[:space:]]+)([-+])/\2\1/g' > plan.txt
 
       # Planの内容を環境変数に入れる
       - name: Put Plan in Env Var
@@ -78,23 +66,12 @@ jobs:
               issue_number: context.issue.number,
             })
             const botComment = comments.find(comment => {
-              return comment.user.type === 'Bot' && comment.body.includes('Terraform Format and Style')
+              return comment.user.type === 'Bot' && comment.body.includes('Terraform Plan Result')
             })
 
             // 2. Prepare format of the comment
-            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-            <details><summary>Validation Output</summary>
-
-            \`\`\`terraform
-            ${{ steps.validate.outputs.stdout }}
-            \`\`\`
-
-            </details>
-
-            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-
+            const output = `
+            #### Terraform Plan 📖
             <details><summary>Show Plan</summary>
 
             \`\`\`diff
@@ -103,7 +80,7 @@ jobs:
 
             </details>
 
-            *Pusher: @${{ github.actor }}, Working Directory: \`${{ matrix.directory }}\``;
+            *Pusher: @${{ github.actor }}, Working Directory: \`${{ github.workspace }}/envs/dev/souvenirConsultApp\``;
 
             // 3. If we have a comment, update it, otherwise create a new one
             if (botComment) {
@@ -121,4 +98,3 @@ jobs:
                 body: output
               })
             }
-
