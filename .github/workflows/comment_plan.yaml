@@ -68,18 +68,20 @@ jobs:
             let planSectionContent = '';
             // terraform plan -no-color の出力に "No changes." が含まれるか確認
             if (planOutput.includes('No changes. Your infrastructure matches the configuration.')) {
-                planSectionContent = `\nNo changes. Your infrastructure matches the configuration.\n`;
+                planSectionContent = `No changes. Your infrastructure matches the configuration.`;
             } else if (planOutput) {
-                // Plan結果がある場合、diff形式で表示
-                planSectionContent = `\n\`\`\`diff\n${planOutput}\n\`\`\`\n`;
+                // Plan結果がある場合、diff形式で表示 (色付きはGitHubのレンダリングに依存)
+                // Plan出力自体の末尾に不要な改行がないことを想定
+                planSectionContent = `\`\`\`diff\n${planOutput}\n\`\`\``;
             } else {
-                // Plan出力が得られなかった場合
-                planSectionContent = `\nCould not generate plan output. Please check the job logs for details.\n`;
+                // Plan出力が得られなかった場合 (例: Plan実行ステップが失敗など)
+                // エラーメッセージなども含まれる可能性があるため、Plan出力をそのまま表示
+                planSectionContent = `Could not generate plan output or an error occurred. Please check the job logs for details.\n\n${planOutput}`;
             }
             
             // 既存のボットコメントを検索
             // コメントトリガー用の新しい識別子を設定します
-            const commentIdentifier = '### Terraform Plan Result (Triggered by Comment)'; 
+            const commentIdentifier = '### Terraform Plan Result (Triggered by Comment)';
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -90,36 +92,48 @@ jobs:
               return comment.user.type === 'Bot' && comment.body.includes(commentIdentifier);
             });
             
+            // コメント本文の生成 - 改行と空行を厳密に調整
             const output = `${commentIdentifier}
+
+              #### Terraform Format and Style 🖌\`N/A\`
             
-            #### Terraform Format and Style 🖌\`N/A\` #### Terraform Initialization ⚙️\`${{ steps.tf_steps.outcome || 'failure' }}\` #### Terraform Validation 🤖\`N/A\` <details><summary>Validation Output</summary>
+              #### Terraform Initialization ⚙️\`${{ steps.tf_steps.outcome || 'failure' }}\`
             
-            \`\`\`terraform
-            N/A \`\`\`
+              #### Terraform Validation 🤖\`N/A\`
             
-            </details>
+                <details><summary>Validation Output</summary>
             
-            #### Terraform Plan 📖\`${{ steps.tf_steps.outcome || 'failure' }}\` <details><summary>Show Plan</summary>
+                \`\`\`terraform
+                N/A
+                \`\`\`
             
-            ${planSectionContent} </details>
+                </details>
             
-            _Triggered by comment: @${{ github.actor }}_
-            _Working Directory: \`./envs/dev/souvenirConsultApp/\`_
-            `;
+                #### Terraform Plan 📖\`${{ steps.tf_steps.outcome || 'failure' }}\`
             
-            // コメントの更新または作成
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: output
+                <details><summary>Show Plan</summary>
+            
+                ${planSectionContent}
+            
+                </details>
+            
+              _Triggered by comment: @${{ github.actor }}_
+              _Working Directory: \`./envs/dev/souvenirConsultApp/\`_
+                `;
+            
+                // コメントの更新または作成
+                if (botComment) {
+                await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: output
               });
-            } else {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: output
+              } else {
+                await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
               });
-            }
+              }
