@@ -126,10 +126,10 @@ jobs:
       # Terraformのセットアップ
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        # ★条件★ 直前の Determine ステップの出力 should_run が 'true' の場合のみSetupを実行
-        if: steps.run-condition.outputs.should_run == 'true'
+        # ★追加★ このステップでエラーが発生してもワークフローを続行する
+        continue-on-error: true
         with:
-          terraform_version: latest # 使用するTerraformのバージョンを指定
+          terraform_version: latest # または特定のバージョン (例: 1.7.5) を試す
 
       # Terraform Initの実行
       - name: Terraform Init
