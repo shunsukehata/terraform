@@ -67,7 +67,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const planOutput = fs.readFileSync('plan.txt', 'utf8');
+            // ファイルパスを修正
+            const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8'); # ★ この行のパスを修正 ★
             const pull_request_number = context.issue.number;
             const comment = `
             ### \`terraform plan\` Result
@@ -154,7 +155,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const planOutput = fs.readFileSync('plan.txt', 'utf8');
+            // ファイルパスを修正
+            const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8'); # ★ この行のパスを修正 ★
             const pull_request_number = context.issue.number;
             const comment = `
             ### \`terraform plan\` Result (Triggered by comment)
