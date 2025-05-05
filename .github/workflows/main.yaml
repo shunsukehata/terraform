@@ -81,41 +81,39 @@ jobs:
       # --- Setup Terraform (条件付き実行) ---
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        # ★条件★ 直前のステップの出力 should_run_terraform が 'true' の場合のみSetupを実行
+        # 直前のステップの出力 should_run_terraform が 'true' の場合のみSetupを実行
         if: steps.run-condition.outputs.should_run_terraform == 'true'
         with:
           terraform_version: latest
 
       # --- 条件付きTerraformステップ群 ---
-      # これらのステップは、Setup Terraformが成功した場合（つまりTerraformを実行すると判断された場合）のみ実行
+      # Setup Terraformが成功した場合（Terraformを実行すると判断された場合）のみ実行
 
       - name: Terraform Init
         id: init
-        working-directory: . # ★設定★ TF構成ファイルのルートディレクトリ
-        # ★条件★ Setupが成功した場合のみ実行
+        working-directory: .
+        # Setupが成功した場合のみ実行
         if: steps.setup-terraform.conclusion == 'success'
         run: terraform init -input=false
 
       - name: Terraform Format Check
         id: fmt
-        working-directory: . # ★設定★ TF構成ファイルのルートディレクトリ
-        # ★条件★ Initが成功した場合のみ実行
+        working-directory: .
+        # Initが成功した場合のみ実行
         if: steps.init.conclusion == 'success'
         run: terraform fmt -check
 
       - name: Terraform Validate
         id: validate
-        working-directory: . # ★設定★ TF構成ファイルのルートディレクトリ
-        # ★条件★ Initが成功した場合のみ実行
+        working-directory: .
+        # Initが成功した場合のみ実行
         if: steps.init.conclusion == 'success'
         run: terraform validate -no-color
 
       - name: Terraform Plan
         id: plan
-        working-directory: . # ★設定★ TF構成ファイルのルートディレクトリ
-        # ★条件★ Initが成功した場合のみ実行
-        # プランを実行しないケース（Pushで変更なし、コメントがコマンドでない場合など）は
-        # 既に Determine Terraform Run Condition -> Setup Terraform のif条件でスキップされています。
+        working-directory: .
+        # Initが成功した場合のみ実行
         if: steps.init.conclusion == 'success'
         run: terraform plan -no-color -input=false
 
