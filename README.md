@@ -7,7 +7,7 @@
 プロジェクトは以下のディレクトリ構成になっています。
 
 ```
-my-aws-infrastructure/
+terraform/
 ├── modules/
 │   ├── iam-role-module/  # IAM Role作成モジュール
 │   │   ├── main.tf
