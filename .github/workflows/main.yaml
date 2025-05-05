@@ -156,20 +156,66 @@ jobs:
       # --- Terraform実行ステップ群 ---
       # これらのステップは、直前の Determine ステップで Terraform を実行すると判断された場合のみ実行します。
 
-      # Terraformのセットアップ
+      # --- Setup Terraform (サイレント失敗の可能性あり) ---
+      # Terraform CLI をセットアップします。
+
+      # ★デバッグ★ Setup Terraform 実行前の環境情報
+      - name: Debug Setup Terraform Environment
+        run: |
+          echo "DEBUG: PATH before setup: $PATH"
+          echo "DEBUG: Which terraform before setup:"
+          which terraform || echo "DEBUG: terraform not found before setup" # terraform が見つかればそのパスを表示
+          echo "DEBUG: Current directory: $(pwd)" # 現在の作業ディレクトリを表示
+        shell: bash # 明示的にbashを使用
+
+      # Setup Terraform 本体
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        # ★追加★ このステップでエラーが発生してもワークフローを続行する
-        continue-on-error: true
-        with:
-          terraform_version: 1.7.5 # ★修正★ ここを特定のバージョンに固定
+        # ★重要★ Setupが成功しない可能性を考慮。続行を許可。
+        # continue-on-error: true をつけておくと、Setupが成功しなかった場合に後続のデバッグステップで結論を確認できます。
+        continue-on-error: true # ← これが必須です
 
-      # Terraform Initの実行
+        with:
+          # latest ではなく、特定の安定バージョンを指定することを強く推奨します。
+          # 1.7.5 で問題が続く場合、別のバージョン (例: 1.6.6, 1.5.7) を試してみてください。
+          terraform_version: 1.7.5 # ← 現在試しているバージョン (必要に応じて変更)
+          # 必要に応じて他のwith設定を追加 (YAMLのインデントに注意)
+          # cli_config_credentials_hostname: app.terraform.io
+          # terraform_wrapper: true
+
+        # 環境変数はジョブレベルで設定済みのため、ここでは不要です。
+
+      # ★デバッグ★ Setup Terraform 実行後の結果と環境情報
+      - name: Debug Setup Terraform Outcome
+        # Setup ステップが continue-on-error: true のため、Setupが失敗してもこのステップは実行されます。
+        # if: always() は不要です。
+        run: |
+          # steps.<step_id>.conclusion はステップの結論 ('success', 'failure', 'cancelled', 'skipped')
+          echo "DEBUG: Conclusion of steps.setup-terraform = '${{ steps.setup-terraform.conclusion }}'"
+          
+          echo "DEBUG: PATH after setup: $PATH"
+          echo "DEBUG: Which terraform after setup:"
+          # which コマンドが失敗してもスクリプトが終了しないように || true を追加
+          which terraform || echo "DEBUG: terraform not found after setup"
+          
+          echo "DEBUG: Terraform version after setup:"
+          # terraform --version コマンドが失敗してもスクリプトが終了しないように || true を追加
+          # バージョンコマンドの出力と終了コードを確認
+          if terraform --version; then
+              echo "DEBUG: terraform --version command succeeded."
+          else
+              echo "DEBUG: terraform --version command failed."
+          fi
+
+        shell: bash # 明示的にbashを使用
+
+      # --- Terraform Init ---
+      # Init ステップの条件は Debug Setup Terraform Outcome ステップで確認した結論に依存
       - name: Terraform Init
-        id: init # 後続ステップで結果を参照するためのID
-        # ★設定★ TF構成ファイルが存在するディレクトリを指定 (例: プロジェクトルートの場合 '.')
-        working-directory: .
-        # ★条件★ Setupが成功した場合のみ実行
+        id: init
+        working-directory: . # TF構成ファイルのルートディレクトリ
+        # ★条件★ Setup Terraform が 'success' という結論になった場合のみ実行
+        # Debug Setup Terraform Outcome ステップの出力でこの結論が確認できます。
         if: steps.setup-terraform.conclusion == 'success'
         run: terraform init -input=false # CI環境ではユーザー入力を求めない
 
