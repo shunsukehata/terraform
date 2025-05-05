@@ -233,6 +233,6 @@ jobs:
         if: |
           github.event_name == 'push' &&
           github.ref == 'refs/heads/master' &&
-          steps.check-tf-changes.outputs.tf-changes == 'true' && # .tf変更があるかチェック
-          steps.init.conclusion == 'success' # Initが成功しているか
+          steps.check-tf-changes.outputs.tf-changes == 'true' &&
+          steps.init.conclusion == 'success'
         run: terraform apply -auto-approve -input=false
