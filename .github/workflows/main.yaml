@@ -1,57 +1,75 @@
+# .github/workflows/main.yaml
+
 name: "Terraform CI/CD Workflow" # ワークフロー名をより包括的なものに変更
 
+# ワークフローがトリガーされるイベントを設定
 on:
   push:
     branches:
-      - master
+      - master # masterブランチへのプッシュでトリガー (マージを含む)
   pull_request:
     types: [opened, reopened, synchronize] # PRオープン、再オープン、同期（新しいコミット）でトリガー
     branches:
-      - master
-  issue_comment:
+      - master # PRのターゲットブランチがmasterの場合
+    # paths: # pathsフィルターはトリガーレベルでも可能ですが、後述のアクションでより柔軟に扱います
+    #   - "**/*.tf"
+  issue_comment: # ★追加★ コメント作成イベントでトリガー
     types: [created] # 新しいコメントが作成されたときにトリガー
 
+# ジョブがワークフロー中に持つ権限を設定
+# comments: write はPRにコメントするために必要です。
+# contents: read はコードをチェックアウトするために必要です。
+# pull-requests: write はPRの状態（マージ可能性など）を読み取るために必要になる場合があります。
+# issues: write はコメントに関連する場合（コメントの編集/削除など）に必要になる場合があります。
 permissions:
   contents: read
   pull-requests: write
-  issues: write
+  issues: write # コメントトリガーの場合に推奨
 
 jobs:
-  terraform:
-    runs-on: ubuntu-latest
+  terraform: # ジョブ名をより一般的なものに変更
+    runs-on: ubuntu-latest # 実行環境としてUbuntuの最新版を使用
 
     env:
       # AWS認証情報をGitHub Secretsから環境変数として設定
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: ap-northeast-1
+      # これらのSecretsはリポジトリの設定で事前に登録しておく必要があります。
+      # この認証情報には、Terraform実行に必要なAWSリソースへの権限と、
+      # Remote State (S3+DynamoDBなど) へのアクセス権限が必要です。
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }} # ★修正★ secrets.secrets を secrets に修正
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }} # ★修正★ secrets.secrets を secrets に修正
+      AWS_REGION: ap-northeast-1 # 使用するAWSリージョンを指定 (例: 東京リージョン)
 
     steps:
       # -- コードチェックアウト --
+      # リポジトリのコードをランナー環境にクローンします。
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           # プッシュ/PR時はデフォルト、コメント時はPRのHEADリファレンスをチェックアウト
-          # fetch-depth: 0 は差分比較のために全履歴を取得
+          # fetch-depth: 0 は差分比較のために全履歴を取得します。
           ref: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request.head.ref || github.ref }}
           fetch-depth: 0
 
       # --- .tf ファイルの変更を検知 ---
-      # プッシュまたはPRイベントが発生する場合、dorny/paths-filter アクションを使用して、特定のパス/パターンのファイルに変更があったかチェック
+      # プッシュまたはPRイベントが発生する場合、dorny/paths-filter アクションを使用して、特定のパス/パターンのファイルに変更があったかチェックします。
       - name: Check for .tf file changes
-        id: check-tf-changes
-        uses: dorny/paths-filter@v3 # paths-filter アクションを使用
-        # プッシュ または PR イベントの場合のみこのステップを実行
-        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        id: check-tf-changes # 後続ステップで結果を参照するためのID
+        uses: dorny/paths-filter@v3 # paths-filter アクションを使用します。
+        # ★条件★ プッシュ または PR イベントの場合のみこのステップを実行します。
+        # issue_comment イベントでは、ファイル変更検知は不要で、コメント内容のチェックを優先します。
+        if: (github.event_name == 'push' || github.event_name == 'pull_request') # ★修正★ if条件にカッコを追加
         with:
+          # 変更を検知したいファイルのパターンを設定します。
+          # tf-changes という名前で出力され、変更があれば 'true'、なければ 'false' になります。
           filters: |
-            tf-changes: # 出力変数名
+            tf-changes: # 出力変数名 (steps.check-tf-changes.outputs.tf-changes で参照)
               - '**/*.tf' # リポジトリ内の任意の場所にある .tf ファイル
 
       # --- コメントが '/terraform plan' かどうかチェック ---
+      # issue_comment イベントの場合のみ実行され、コメントが指定コマンドか判断します。
       - name: Check Comment Command
-        id: check-comment-command
-        # issue_comment イベントの場合のみこのステップを実行
+        id: check-comment-command # 後続ステップで結果を参照するためのID
+        # ★条件★ issue_comment イベントの場合のみこのステップを実行します。
         if: github.event_name == 'issue_comment'
         run: |
           COMMENT_BODY="${{ github.event.comment.body }}"
@@ -59,110 +77,132 @@ jobs:
           if [[ "$COMMENT_BODY" == "/terraform plan" ]]; then
             IS_PLAN_COMMAND=true
           fi
-          # 結果を出力変数として設定 (steps.check-comment-command.outputs.is_plan_command で参照)
+          # 結果を出力変数として設定します (steps.check-comment-command.outputs.is_plan_command で参照)
           echo "is_plan_command=$IS_PLAN_COMMAND" >> "$GITHUB_OUTPUT"
-        shell: bash
+        shell: bash # スクリプト実行にbashを使用することを明示
 
       # --- Terraformを実行すべきか最終判断 ---
-      # プッシュ時の変更、PR時のトリガー、コメントコマンドのいずれかに該当するか判断
+      # 前述のチェック結果とイベントタイプを元に、Terraformステップを実行すべきか最終判断を行います。
       - name: Determine if Terraform Should Run
-        id: run-condition
+        id: run-condition # 後続ステップで結果を参照するためのID
         run: |
-          SHOULD_RUN=false
+          SHOULD_RUN=false # 初期値として、Terraformは実行しないと設定
           EVENT_NAME="${{ github.event_name }}"
 
           if [ "$EVENT_NAME" == "push" ]; then
             # プッシュ時: check-tf-changes ステップの出力が 'true' の場合のみ実行
+            # check-tf-changes ステップは push または pull_request でしか実行されないため、
+            # push イベントの場合はこの条件だけで判断できます。
             if [ "${{ steps.check-tf-changes.outputs.tf-changes }}" == "true" ]; then
               SHOULD_RUN=true
-              echo "Trigger: Push with .tf changes"
+              echo "Trigger: Push with .tf changes detected."
             else
               echo "Trigger: Push without .tf changes. Skipping Terraform run."
             fi
           elif [ "$EVENT_NAME" == "pull_request" ]; then
-             # PRイベントであれば常に実行
-             # もしPR時も変更がある場合のみ実行したいなら `${{ steps.check-tf-changes.outputs.tf-changes == 'true' }}` を条件に追加
+             # PRイベント: PRイベントであれば常にPlanを実行すると判断します。
+             # (もしPR時も変更がある場合のみ実行したいなら `${{ steps.check-tf-changes.outputs.tf-changes == 'true' }}` を条件に追加)
             SHOULD_RUN=true
-            echo "Trigger: Pull Request"
+            echo "Trigger: Pull Request event."
           elif [ "$EVENT_NAME" == "issue_comment" ]; then
-            # check-comment-command ステップの出力が 'true' の場合のみ実行
+            # コメントイベント: check-comment-command ステップの出力が 'true' の場合のみ実行
+            # check-comment-command ステップは issue_comment でしか実行されないため、
+            # issue_comment イベントの場合はこの条件だけで判断できます。
             if [ "${{ steps.check-comment-command.outputs.is_plan_command }}" == "true" ]; then
               SHOULD_RUN=true
-              echo "Trigger: '/terraform plan' command in comment"
+              echo "Trigger: '/terraform plan' command in comment detected."
             else
               echo "Trigger: Comment without command. Skipping Terraform run."
             fi
           fi
 
+          # 後続ステップで参照できるよう最終判断を出力します。
           echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
-        shell: bash
+        shell: bash # スクリプト実行にbashを使用することを明示
 
       # --- Terraform実行ステップ群 ---
+      # これらのステップは、直前の Determine ステップで Terraform を実行すると判断された場合のみ実行します。
+
+      # Terraformのセットアップ
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        # 直前の Determine ステップで run_condition が 'true' の場合のみ実行
+        # ★条件★ 直前の Determine ステップの出力 should_run が 'true' の場合のみSetupを実行
         if: steps.run-condition.outputs.should_run == 'true'
         with:
-          terraform_version: latest
+          terraform_version: latest # 使用するTerraformのバージョンを指定
 
       # Terraform Initの実行
       - name: Terraform Init
-        id: init
-        working-directory: . # TF構成ファイルのルートディレクトリ
-        # Setupが成功した場合のみ実行
+        id: init # 後続ステップで結果を参照するためのID
+        # ★設定★ TF構成ファイルが存在するディレクトリを指定 (例: プロジェクトルートの場合 '.')
+        working-directory: .
+        # ★条件★ Setupが成功した場合のみ実行
         if: steps.setup-terraform.conclusion == 'success'
-        run: terraform init -input=false
+        run: terraform init -input=false # CI環境ではユーザー入力を求めない
 
       # Terraform Validateの実行
       - name: Terraform Validate
-        id: validate
-        working-directory: . # TF構成ファイルのルートディレクトリ
+        id: validate # 後続ステップで結果を参照するためのID
+        working-directory: . # ★設定★ TF構成ファイルのルートディレクトリ
+        # ★条件★ Initが成功した場合のみ実行
         if: steps.init.conclusion == 'success'
-        run: terraform validate -no-color
+        run: terraform validate -no-color # カラー出力を無効化
 
       # Terraform Planの実行
       - name: Run terraform plan
-        id: plan
-        working-directory: . # TF構成ファイルのルートディレクトリ
+        id: plan # 後続ステップで結果を参照するためのID
+        working-directory: . # ★設定★ TF構成ファイルのルートディレクトリ
+        # ★条件★ Initが成功した場合のみ実行
         if: steps.init.conclusion == 'success'
-        run: terraform plan -no-color
+        run: terraform plan -no-color # カラー出力を無効化
 
       # Planの結果を整形してハイライト可能なdiff形式に変換
+      # Planが成功した場合のみ実行します。
       - name: Reformat Plan
-        id: reformat_plan
+        id: reformat_plan # 後続ステップで結果を参照するためのID
+        # ★条件★ Planが成功した場合のみ実行
         if: steps.plan.conclusion == 'success'
         run: |
           # steps.plan.outputs.stdout は Plan の標準出力、steps.plan.outputs.stderr はエラー出力
-          PLAN_OUTPUT="${{ steps.plan.outputs.stdout }}"
+          # Planが成功した場合(conclusion == 'success')はstdoutに計画が出力されます。
           # sed コマンドで diff 形式に整形 (行頭のスペースと +/- を入れ替える)
-          echo "$PLAN_OUTPUT" | sed -E 's/^([[:space:]]+)([-+])/\2\1/g' > plan.txt
-        shell: bash # 明示的にbashを使用
+          # sed コマンドが失敗した場合を考慮して || true を追加
+          PLAN_OUTPUT="${{ steps.plan.outputs.stdout }}"
+          echo "$PLAN_OUTPUT" | sed -E 's/^([[:space:]]+)([-+])/\2\1/g' > plan.txt || true
+        shell: bash # スクリプト実行にbashを使用することを明示
 
-      # Planの内容を環境変数に入れる
-      # 整形ステップが成功した場合のみ実行
+      # 整形したPlanの内容を環境変数に入れる
+      # 整形ステップが成功した場合のみ実行します。
       - name: Put Plan in Env Var
-        id: put_plan_env
+        id: put_plan_env # 後続ステップで結果を参照するためのID
+        # ★条件★ 整形ステップが成功した場合のみ実行
         if: steps.reformat_plan.conclusion == 'success'
         run: |
-          # plan.txt の内容を読み込み
-          PLAN_CONTENT=$(cat plan.txt)
-          # GITHUB_ENV ファイルに追記して環境変数 PLAN を設定
-          # ヒアドキュメント形式 (EOF) を使用
-          echo "PLAN<<EOF" >> "$GITHUB_ENV"
-          echo "$PLAN_CONTENT" >> "$GITHUB_ENV"
-          echo "EOF" >> "$GITHUB_ENV"
-        shell: bash # 明示的にbashを使用
+          # plan.txt ファイルが存在するか確認し、存在する場合のみ読み込み
+          if [ -f plan.txt ]; then
+            PLAN_CONTENT=$(cat plan.txt)
+            # GITHUB_ENV 環境変数ファイルに追記して環境変数 PLAN を設定します。
+            # ヒアドキュメント形式 (EOF) を使用します。
+            echo "PLAN<<EOF" >> "$GITHUB_ENV"
+            echo "$PLAN_CONTENT" >> "$GITHUB_ENV"
+            echo "EOF" >> "$GITHUB_ENV"
+          else
+            echo "Plan output file plan.txt not found."
+          fi
+        shell: bash # スクリプト実行にbashを使用することを明示
 
       # PRコメントにPlanの結果を投稿
-      # PRイベントであり、かつPlan結果を環境変数に入れるステップが成功した場合のみ実行
+      # PRイベントであり、かつPlan結果を環境変数に入れるステップが成功した場合のみ実行します。
       - name: Read Plan and Post Comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v7 # GitHub APIを操作するためのアクション
+        # ★条件★ Pull Request イベントであり、かつ Plan結果を環境変数に格納するステップが成功した場合のみ実行
         if: github.event_name == 'pull_request' && steps.put_plan_env.conclusion == 'success'
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }} # GitHub提供のデフォルトトークンを使用
           script: |
 
             // 1. Retrieve existing bot comments for the PR
+            // 将来的に複数のbotコメントがある場合を考慮して、特定の文字列を含むコメントを探します。
             const commentIdentifier = ''; // コメント識別のための隠し文字列
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -176,6 +216,7 @@ jobs:
             });
 
             // 2. Prepare format of the comment
+            // 各ステップの結果 (success, failureなど) と環境変数に格納したPlan結果を使用してコメント本文を作成します。
             const output = `
               ${commentIdentifier}
 
@@ -225,14 +266,16 @@ jobs:
             }
 
       # --- ★Applyステップ★ ---
-      # Applyは master ブランチへのPush時のみ、かつ .tf ファイルに変更があった場合のみ実行
+      # Applyは master ブランチへのPush時のみ、かつ .tf ファイルに変更があった場合のみ実行します。
       - name: Terraform Apply
-        id: apply
-        working-directory: . # TF構成ファイルのルートディレクトリ
-        # Pushイベント AND masterブランチ AND .tf変更あり AND Init成功の場合のみ実行
+        id: apply # 後続ステップで結果を参照するためのID
+        working-directory: . # ★設定★ TF構成ファイルのルートディレクトリ (必要に応じて修正)
+        # ★条件★ Pushイベント AND masterブランチ AND .tf変更あり AND Init成功の場合のみ実行
+        # .tf変更の有無は check-tf-changes ステップの出力で判断します。
         if: |
           github.event_name == 'push' &&
           github.ref == 'refs/heads/master' &&
           steps.check-tf-changes.outputs.tf-changes == 'true' &&
           steps.init.conclusion == 'success'
-        run: terraform apply -auto-approve -input=false
+
+        run: terraform apply -auto-approve -input=false # -auto-approve は確認なしに実行。本番環境では慎重に。
