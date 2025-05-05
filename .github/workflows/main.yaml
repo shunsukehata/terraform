@@ -81,29 +81,31 @@ jobs:
           echo "is_plan_command=$IS_PLAN_COMMAND" >> "$GITHUB_OUTPUT"
         shell: bash # スクリプト実行にbashを使用することを明示
 
-  - name: Determine if Terraform Should Run (出力デバッグ)
-      id: run-condition # 後続ステップで結果を参照するためのID
-      run: | # <-- スクリプト開始
-        echo "--- 出力デバッグテスト ---"
-        
-        # 後続ステップで参照できるよう最終判断を出力します。
-        # should_run=true という名前=値の形式で GITHUB_OUTPUT 環境変数で指定されたファイルに追記します。
-        # ★デバッグ★ GITHUB_OUTPUT ファイルパスを表示
-        echo "DEBUG: GITHUB_OUTPUT path = '$GITHUB_OUTPUT'"
-        
-        # ★重要な出力設定★ should_run=true を GITHUB_OUTPUT ファイルに追記
-        echo "should_run=true" >> "$GITHUB_OUTPUT"
-        echo "DEBUG: 'should_run=true' written to $GITHUB_OUTPUT"
-        
-        # ★デバッグ★ GITHUB_OUTPUT ファイルの中身を読み上げて表示
-        # これがログに表示されれば、ファイルへの書き込み自体は成功していることになります。
-        echo "DEBUG: Content of $GITHUB_OUTPUT after write:"
-        cat "$GITHUB_OUTPUT"
-        echo "DEBUG: --- End of $GITHUB_OUTPUT content ---"
-        
-        echo "DEBUG: Determine step script finished."
+      # --- Determine if Terraform Should Run (シンプルテスト) ---
+      # このステップは、後続のTerraformステップを実行すべきかを判断するためのシンプルテスト版です。
+      - name: Determine if Terraform Should Run (出力デバッグ)
+        id: run-condition # 後続ステップで結果を参照するためのID
+        run: | # <-- スクリプト開始
+          echo "--- 出力デバッグテスト ---"
 
-      shell: bash # 明示的にbashを使用
+          # 後続ステップで参照できるよう最終判断を出力します。
+          # should_run=true という名前=値の形式で GITHUB_OUTPUT 環境変数で指定されたファイルに追記します。
+          # ★デバッグ★ GITHUB_OUTPUT ファイルパスを表示
+          echo "DEBUG: GITHUB_OUTPUT path = '$GITHUB_OUTPUT'"
+
+          # ★重要な出力設定★ should_run=true を GITHUB_OUTPUT ファイルに追記
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+          echo "DEBUG: 'should_run=true' written to $GITHUB_OUTPUT"
+
+          # ★デバッグ★ GITHUB_OUTPUT ファイルの中身を読み上げて表示
+          # これがログに表示されれば、ファイルへの書き込み自体は成功していることになります。
+          echo "DEBUG: Content of $GITHUB_OUTPUT after write:"
+          cat "$GITHUB_OUTPUT"
+          echo "DEBUG: --- End of $GITHUB_OUTPUT content ---"
+          
+          echo "DEBUG: Determine step script finished."
+
+        shell: bash # 明示的にbashを使用
 
       # --- Terraform実行ステップ群 ---
       # これらのステップは、直前の Determine ステップで Terraform を実行すると判断された場合のみ実行します。
