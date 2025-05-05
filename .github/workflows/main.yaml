@@ -83,42 +83,13 @@ jobs:
 
       # --- Terraformを実行すべきか最終判断 ---
       # 前述のチェック結果とイベントタイプを元に、Terraformステップを実行すべきか最終判断を行います。
-      - name: Determine if Terraform Should Run
+      - name: Determine if Terraform Should Run (シンプルテスト)
         id: run-condition # 後続ステップで結果を参照するためのID
-        run: |
-          SHOULD_RUN=false # 初期値として、Terraformは実行しないと設定
-          EVENT_NAME="${{ github.event_name }}"
-
-          if [ "$EVENT_NAME" == "push" ]; then
-            # プッシュ時: check-tf-changes ステップの出力が 'true' の場合のみ実行
-            # check-tf-changes ステップは push または pull_request でしか実行されないため、
-            # push イベントの場合はこの条件だけで判断できます。
-            if [ "${{ steps.check-tf-changes.outputs.tf-changes }}" == "true" ]; then
-              SHOULD_RUN=true
-              echo "Trigger: Push with .tf changes detected."
-            else
-              echo "Trigger: Push without .tf changes. Skipping Terraform run."
-            fi
-          elif [ "$EVENT_NAME" == "pull_request" ]; then
-             # PRイベント: PRイベントであれば常にPlanを実行すると判断します。
-             # (もしPR時も変更がある場合のみ実行したいなら `${{ steps.check-tf-changes.outputs.tf-changes == 'true' }}` を条件に追加)
-            SHOULD_RUN=true
-            echo "Trigger: Pull Request event."
-          elif [ "$EVENT_NAME" == "issue_comment" ]; then
-            # コメントイベント: check-comment-command ステップの出力が 'true' の場合のみ実行
-            # check-comment-command ステップは issue_comment でしか実行されないため、
-            # issue_comment イベントの場合はこの条件だけで判断できます。
-            if [ "${{ steps.check-comment-command.outputs.is_plan_command }}" == "true" ]; then
-              SHOULD_RUN=true
-              echo "Trigger: '/terraform plan' command in comment detected."
-            else
-              echo "Trigger: Comment without command. Skipping Terraform run."
-            fi
-          fi
-
-          # 後続ステップで参照できるよう最終判断を出力します。
-          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
-        shell: bash # スクリプト実行にbashを使用することを明示
+        run: | # run: | の後のインデントを正確に！
+          echo "--- シンプルテスト ---"
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+          echo "DEBUG: シンプルテスト出力行実行完了"
+        shell: bash # 明示的にbashを使用
 
       # --- Terraform実行ステップ群 ---
       # これらのステップは、直前の Determine ステップで Terraform を実行すると判断された場合のみ実行します。
