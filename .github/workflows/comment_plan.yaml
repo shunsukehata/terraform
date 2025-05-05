@@ -12,15 +12,16 @@ jobs:
     name: Plan on Comment
     runs-on: ubuntu-latest
     # コメントトリガーで、コメント内容が"plan"で、それがPRに対するコメントの場合に実行
+    # トップレベルのonでissue_commentのみを指定したので、ここではコメント内容とPRに対するコメントかのチェックのみでOK
     if: contains(github.event.comment.body, 'plan') && github.event.issue.pull_request
     permissions:
-      pull-requests: write
+      pull-requests: write # PRにコメントするために必要
       contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.issue.pull_request.head.ref }}
+          ref: ${{ github.event.issue.pull_request.head.ref }} # PRのHEADをチェックアウト
           repository: ${{ github.event.issue.pull_request.head.repo.full_name }}
 
       - name: Configure AWS Credentials
@@ -35,13 +36,11 @@ jobs:
         with:
           terraform_version: latest
 
-      # terraform-markdown ツールをインストール (Node.js が必要)
+      # スクリプト実行に必要なNode.js環境をセットアップ
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # 適切なNode.jsバージョンを指定
-      - name: Install terraform-markdown
-        run: npm install -g terraform-markdown
+          node-version: '20' # スクリプトの実行に必要なNode.jsバージョンを指定
 
       # Terraform Init と Plan (JSON出力)
       - name: Terraform Init and Plan (JSON)
@@ -51,38 +50,10 @@ jobs:
           terraform plan -json > plan.json
         working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
 
-      # Plan結果をMarkdownに整形
-      - name: Format Plan Output to Markdown
-        run: |
-          # terraform-markdown を実行し、JSONファイルをMarkdownに変換
-          terraform-markdown ./envs/dev/souvenirConsultApp/plan.json > plan.md
-        # working-directory は不要 (npm install -g でインストールされているためパスが通っている)
-
-      # 整形されたPlan結果をPRにコメント
+      # Plan結果をパースして差分形式でコメント (別ファイルで定義したスクリプトを実行)
       - name: Add Formatted Plan comment to PR
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            // 整形されたMarkdownファイルを読み込む
-            const planOutput = fs.readFileSync('plan.md', 'utf8');
-            const pull_request_number = context.issue.number;
-            const comment = `
-            ### \`terraform plan\` Result (Triggered by comment)
-
-            <details><summary>Click to expand plan</summary>
-
-            ${planOutput} # 整形されたMarkdownをそのまま埋め込み
-
-            </details>
-
-            _Ran on commit \`${context.sha}\`_
-            `;
-
-            await github.rest.issues.createComment({
-              issue_number: pull_request_number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
+          # 別ファイルに分けたスクリプトを指定
+          script: ./scripts/format_plan_comment.js # リポジトリルートからのスクリプトファイルのパスを指定
