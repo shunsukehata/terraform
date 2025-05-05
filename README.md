@@ -17,11 +17,7 @@ my-aws-infrastructure/
 │       ├── main.tf
 │       ├── variables.tf
 │       └── outputs.tf
-├── main.tf             # ルートモジュール: モジュールを呼び出し、リソースを構成します
-├── variables.tf        # ルートモジュール: ルートモジュールの入力変数 (必要に応じて使用)
-├── outputs.tf          # ルートモジュール: デプロイ後に確認したい出力値を定義します
-└── versions.tf         # ルートモジュール: Terraformとプロバイダのバージョン、バックエンド設定
-└── README.md           # このファイル
+└── README.md
 ```
 
 -   `modules/`: 再利用可能なモジュール群を格納します。
@@ -48,7 +44,7 @@ TerraformがAWSリソースを作成するためには、AWS認証情報が必�
 
 **注意:** GitHub Actionsから実行する場合は、これらの認証情報をGitHub Secretsに登録する必要があります。
 
-## 使用方法
+## local環境使用方法
 
 1.  このリポジトリをクローンします。
 
@@ -74,16 +70,6 @@ TerraformがAWSリソースを作成するためには、AWS認証情報が必�
     ```
 
     **警告:** ローカル環境で `terraform apply` を実行する際は注意が必要です。Stateの不整合や競合を防ぐため、可能であればCI/CDパイプラインから実行します。
-
-5.  実行計画を適用し、AWSリソースをデプロイします。
-
-    ```bash
-    terraform apply
-    ```
-
-    確認を求められたら `yes` と入力してください。（`-auto-approve` オプションを使用すると確認なしに実行できますが、注意して使用してください。CI/CDでは `-auto-approve` を使うことが多いです。）
-
-6.  デプロイが完了すると、`outputs.tf` で定義された出力値が表示されます。
 
 ## 設定 (Configuration)
 
