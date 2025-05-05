@@ -1,4 +1,4 @@
-name: Terraform Plan (Comment Trigger) # ワークフロー名をコメント用と明確にする
+name: Terraform Comment Plan
 
 on:
   # Pull Requestのコメントが作成されたときにトリガー
@@ -12,16 +12,15 @@ jobs:
     name: Plan on Comment
     runs-on: ubuntu-latest
     # コメントトリガーで、コメント内容が"plan"で、それがPRに対するコメントの場合に実行
-    # トップレベルのonでissue_commentのみを指定したので、ここではコメント内容とPRに対するコメントかのチェックのみでOK
     if: contains(github.event.comment.body, 'plan') && github.event.issue.pull_request
     permissions:
-      pull-requests: write # PRにコメントするために必要
+      pull-requests: write
       contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.issue.pull_request.head.ref }} # PRのHEADをチェックアウト
+          ref: ${{ github.event.issue.pull_request.head.ref }}
           repository: ${{ github.event.issue.pull_request.head.repo.full_name }}
 
       - name: Configure AWS Credentials
@@ -40,7 +39,7 @@ jobs:
         run: |
           terraform init -backend=true -reconfigure
           terraform plan -no-color | tee plan.txt # 出力をファイルに保存して色を消す
-        working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
+        working-directory: ./envs/dev/souvenirConsultApp/
 
       - name: Add Plan comment to PR
         uses: actions/github-script@v7

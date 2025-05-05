@@ -1,32 +1,30 @@
-name: Terraform Plan
+name: Terraform Push Plan
 
 on:
+  # Pull Requestのオープン・同期・リオープン時にトリガー
   pull_request:
     branches:
-      - master # デフォルトブランチを指定。mainなどの場合は変更
+      - master
     types:
       - opened
       - synchronize
       - reopened
-  issue_comment:
-    types:
-      - created
 
 jobs:
   # Pull Requestのオープン・同期・リオープン時のPlan実行ジョブ
   pull_request_plan:
     name: Plan on PR
     runs-on: ubuntu-latest
-    # PRオープン・同期・リオープン時、かつコメントがトリガーでない場合に実行
+    # PRオープン・同期・リオープン時に実行
     if: github.event_name == 'pull_request'
     permissions:
-      pull-requests: write # PRにコメントするために必要
+      pull-requests: write
       contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }} # PRのHEADをチェックアウト
+          ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
 
       - name: Configure AWS Credentials
@@ -57,7 +55,7 @@ jobs:
         run: |
           terraform init -backend=true -reconfigure
           terraform plan -no-color | tee plan.txt # 出力をファイルに保存して色を消す
-        working-directory: ./envs/dev/souvenirConsultApp/ # Terraformのルートモジュールディレクトリを指定
+        working-directory: ./envs/dev/souvenirConsultApp/
 
       # 差分がある場合のみPlan結果をPRにコメント
       - name: Add Plan comment to PR
@@ -67,23 +65,23 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            // ファイルパスを修正 (コメントを削除)
+            // ファイルパスを修正
             const planOutput = fs.readFileSync('./envs/dev/souvenirConsultApp/plan.txt', 'utf8');
             const pull_request_number = context.issue.number;
             const comment = `
             ### \`terraform plan\` Result
-
+            
             <details><summary>Click to expand plan</summary>
-
+            
             \`\`\`hcl
             ${planOutput}
             \`\`\`
-
+            
             </details>
-
+            
             _Ran on commit \`${context.sha}\`_
             `;
-
+            
             await github.rest.issues.createComment({
               issue_number: pull_request_number,
               owner: context.repo.owner,
@@ -101,15 +99,16 @@ jobs:
             const pull_request_number = context.issue.number;
             const comment = `
             ### \`terraform plan\` Skipped
-
+            
             No changes detected in \`.tf\` files.
-
+            
             _Ran on commit \`${context.sha}\`_
             `;
-
+            
             await github.rest.issues.createComment({
               issue_number: pull_request_number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: comment
             });
+    

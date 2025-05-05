@@ -3,7 +3,7 @@ name: Terraform Apply
 on:
   push:
     branches:
-      - master # デフォルトブランチを指定。mainなどの場合は変更
+      - master
 
 jobs:
   terraform_apply:
